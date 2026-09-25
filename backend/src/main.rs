@@ -64,32 +64,18 @@ impl Plugin {
     // connection/test：只校验目录可读，不建会话
     fn test(&self, params: &Value) -> Result<Value, PluginError> {
         let conn = params.get("connection").cloned().unwrap_or_default();
-        let mode = str_field(&conn, &["mode"]).unwrap_or_else(|| "local".to_string());
-        if mode == "ssh" {
-            return Err(PluginError::new(
-                -32000,
-                "SSH 模式尚未实现：本版仅支持本地目录，请切 mode=local 后重试",
-            ));
-        }
         let dir = str_field(&conn, &["log_dir"]).ok_or_else(|| PluginError::new(-32602, "Missing log_dir"))?;
         let count = count_log_files(&dir)?;
         Ok(json!({ "success": true, "message": format!("目录可读，共 {count} 个日志文件：{dir}") }))
     }
 
-    // connection/connect：local 校验目录并注册会话；ssh 直接给可行动错误
+    // connection/connect：校验目录并注册会话
     fn connect(&self, params: &Value) -> Result<Value, PluginError> {
         let conn = params.get("connection").cloned().unwrap_or_default();
         let id = conn
             .get("id")
             .and_then(Value::as_str)
             .ok_or_else(|| PluginError::new(-32602, "Missing connection id"))?;
-        let mode = str_field(&conn, &["mode"]).unwrap_or_else(|| "local".to_string());
-        if mode == "ssh" {
-            return Err(PluginError::new(
-                -32000,
-                "SSH 模式尚未实现：本版仅支持本地目录，后续迭代补 russh 通道",
-            ));
-        }
         let dir = str_field(&conn, &["log_dir"]).ok_or_else(|| PluginError::new(-32602, "Missing log_dir"))?;
         count_log_files(&dir)?; // 提前暴露目录问题，不等首次 search 才报错
         self.sessions
@@ -528,5 +514,20 @@ mod tests {
         assert!(safe_join("/var/log/aiban", "aiban-file.log").is_ok());
         assert!(safe_join("/var/log/aiban", "../etc/passwd").is_err());
         assert!(safe_join("/var/log/aiban", "sub/dir.log").is_err());
+    }
+
+    // 移除 SSH 选项后的兼容：旧连接残留 mode=ssh 不再被拒绝，按本地目录处理
+    #[test]
+    fn connect_ignores_legacy_ssh_mode() {
+        let dir = std::env::temp_dir().join("dbx-logviewer-legacy-ssh");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.log"), "hello\n").unwrap();
+        let plugin = Plugin::default();
+        let params = serde_json::json!({
+            "connection": { "id": "legacy-ssh-conn", "mode": "ssh", "log_dir": dir.to_str().unwrap() }
+        });
+        let r = plugin.connect(&params).expect("旧 ssh 负载应按本地目录处理");
+        assert_eq!(r["success"], true);
+        std::fs::remove_dir_all(&dir).ok(); // 测试收尾清理临时目录
     }
 }

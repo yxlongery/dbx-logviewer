@@ -17,7 +17,7 @@ AGENTS.md 只保留铁律与高频命令，本 skill 收纳「参考型知识」
 
 ## 项目结构
 
-- `manifest.json`：插件身份、双模式连接表单（local/ssh）、权限（host.storage/host.events）、workbench 声明
+- `manifest.json`：插件身份、本地目录连接表单、权限（host.storage/host.events）、workbench 声明
 - `backend/src/main.rs`：Rust Sidecar 单文件。7 个 RPC：connection/test/connect/disconnect、logs/list/search/tail+stop/downloadChunk
 - `ui/index.html`：单文件前端，无构建。三段式：文件卡片 → 搜索条件 → 日志区
 - `dist/`：构建输出不提交（gitignore），发版靠 GitHub Release workflow 产物
@@ -29,7 +29,6 @@ AGENTS.md 只保留铁律与高频命令，本 skill 收纳「参考型知识」
 - `logs/search`：关键字模糊 + 级别 + 时间范围 + 分页（上限 500/页，总量上限 20000 行截断）
 - `logs/tail`：起后台线程轮询增量，经 `logs/append` 事件推送，返回 streamId；`logs/stop` 停止
 - `logs/downloadChunk`：按行分块，前端循环拼装经 fileTransfer 落盘
-- SSH 模式后端返回可行动错误（见 TD 条目），前端表单已预留
 
 ## 构建链
 

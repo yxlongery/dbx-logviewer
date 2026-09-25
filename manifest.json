@@ -39,70 +39,12 @@
           "required": true
         },
         {
-          "key": "mode",
-          "label": "Mode",
-          "type": "radio",
-          "options": [
-            { "label": "Local directory", "value": "local" },
-            { "label": "SSH server", "value": "ssh" }
-          ],
-          "default": "local",
-          "binding": "config",
-          "required": true
-        },
-        {
           "key": "log_dir",
           "label": "Log directory",
           "type": "text",
           "placeholder": "/var/log/aiban/",
           "binding": "config",
           "required": true
-        },
-        {
-          "key": "ssh_host",
-          "label": "SSH host",
-          "type": "text",
-          "binding": "host",
-          "visible_when": { "field": "mode", "one_of": ["ssh"] },
-          "required_when": { "field": "mode", "one_of": ["ssh"] }
-        },
-        {
-          "key": "ssh_port",
-          "label": "SSH port",
-          "type": "number",
-          "default": 22,
-          "binding": "port",
-          "visible_when": { "field": "mode", "one_of": ["ssh"] }
-        },
-        {
-          "key": "ssh_user",
-          "label": "SSH user",
-          "type": "text",
-          "binding": "username",
-          "visible_when": { "field": "mode", "one_of": ["ssh"] },
-          "required_when": { "field": "mode", "one_of": ["ssh"] }
-        },
-        {
-          "key": "ssh_password",
-          "label": "SSH password",
-          "type": "password",
-          "binding": "secret",
-          "visible_when": { "field": "mode", "one_of": ["ssh"] }
-        },
-        {
-          "key": "private_key_path",
-          "label": "Private key path",
-          "type": "text",
-          "binding": "config",
-          "picker": { "kind": "file", "accept": [".pem", ".key"], "content_field": "private_key" },
-          "visible_when": { "field": "mode", "one_of": ["ssh"] }
-        },
-        {
-          "key": "private_key",
-          "label": "Private key content",
-          "type": "textarea",
-          "binding": "secret",
-          "visible_when": { "field": "mode", "one_of": ["ssh"] }
         }
       ],
       "workbench": "io.github.yxlonger.logviewer.workbench",
@@ -126,14 +68,7 @@
           "description": "浏览服务器 .log 文件，支持搜索与实时滚动。",
           "fields": {
             "display_name": { "label": "连接名称" },
-            "mode": { "label": "模式" },
-            "log_dir": { "label": "日志目录" },
-            "ssh_host": { "label": "SSH 主机" },
-            "ssh_port": { "label": "SSH 端口" },
-            "ssh_user": { "label": "SSH 用户" },
-            "ssh_password": { "label": "SSH 密码" },
-            "private_key_path": { "label": "私钥路径" },
-            "private_key": { "label": "私钥内容" }
+            "log_dir": { "label": "日志目录" }
           }
         },
         "io.github.yxlonger.logviewer.workbench": {
