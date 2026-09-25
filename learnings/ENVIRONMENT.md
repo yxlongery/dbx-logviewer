@@ -26,3 +26,9 @@
 - 源码：`github.com/yxlongery/dbx-logviewer`；商店 PR：`t8y2/dbx-store#164`
 - 发版：打 Tag → GitHub Release（prerelease 试水）→ 官方复用 workflow（ref 用 `@main`）打 5 平台包 → 提候选 PR
 - 本文件不落密钥/token/私钥，只写脱敏摘要
+
+## Git 远端（2026-09-25 切 ssh）
+
+- `origin` 为 `ssh` 形态（宿主 GitHub 独立 key 直推）；容器内无私钥，凡访问远端的操作（fetch/pull/ls-remote/push）会失败，本地操作正常
+- `push` 固定走宿主：`ssh nas 'cd /vol1/1000/docker/opencode/data/workspace/dbx-logviewer && git push origin main'`
+- 宿主侧曾报 `dubious ownership`，已加 `safe.directory` 例外（宿主本地 git config，不进提交）
