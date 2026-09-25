@@ -44,11 +44,12 @@
   .hint { font-size: 12.5px; opacity: .7; margin-top: 8px; }
   /* ===== 美化：顶栏 / 卡片 / 徽章 / 空状态（纯 CSS，不改 JS 逻辑） ===== */
   .hero { display: flex; align-items: center; gap: 14px; color: #fff;
-    background: linear-gradient(135deg, rgba(109,93,252,.78) 0%, rgba(79,142,247,.68) 55%, rgba(44,201,167,.72) 100%);
+    background: linear-gradient(135deg, var(--hero-from, rgba(109,93,252,.78)) 0%, var(--hero-mid, rgba(79,142,247,.68)) 55%, var(--hero-to, rgba(44,201,167,.72)) 100%);
     backdrop-filter: blur(14px) saturate(1.3); -webkit-backdrop-filter: blur(14px) saturate(1.3);
     border: 1px solid rgba(255,255,255,.25); border-bottom: 2px solid rgba(255,255,255,.35);
     border-radius: var(--radius-lg, 16px); padding: 18px 22px; margin-bottom: 16px;
-    box-shadow: 0 8px 32px rgba(80,70,180,.25); position: relative; z-index: 1; }
+    box-shadow: 0 8px 32px rgba(80,70,180,.25); position: relative; z-index: 2; }
+  /* z-index 高于 .card(1)：主题面板展开时压住下方卡片，不被盖住 */
   /* 旧 WebView 不支持毛玻璃时回退实色渐变 */
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .hero { background: linear-gradient(135deg, #6d5dfc 0%, #4f8ef7 55%, #2cc9a7 100%); }
@@ -88,9 +89,9 @@
     border-radius: 50%; filter: blur(120px); opacity: var(--glow-opacity);
     pointer-events: none; z-index: 0; }
   body::before { top: -160px; left: -120px;
-    background: radial-gradient(circle, #6d5dfc, transparent 70%); }
+    background: radial-gradient(circle, var(--glow-a, #6d5dfc), transparent 70%); }
   body::after { bottom: -180px; right: -120px;
-    background: radial-gradient(circle, #2cc9a7, transparent 70%); }
+    background: radial-gradient(circle, var(--glow-b, #2cc9a7), transparent 70%); }
   .card { position: relative; z-index: 1; }
   /* 浅色档：强制浅色变量（覆盖宿主深色） */
   body[data-theme="light"] { --color-background: #f4f4fb; --color-card: #fff;
@@ -118,6 +119,46 @@
   /* 顶栏主题按钮：透明底白字 */
   .theme-btn { background: rgba(255,255,255,.18); box-shadow: none;
     padding: 6px 12px; font-size: 15px; border-radius: 999px; }
+  /* ===== 多主题：墨绿 / 深海 / 黄昏 / 薄荷（变量覆盖，日志区保持深色） ===== */
+  body[data-theme="forest"] { --color-background: #0d1512; --color-card: #142019;
+    --color-border: #23402f; --color-foreground: #dff0e6; --color-muted: #1a2b22;
+    --color-primary: #2cc9a7; --glow-opacity: .45;
+    --glow-a: #1f7a5c; --glow-b: #2cc9a7;
+    --hero-from: rgba(20,60,45,.82); --hero-mid: rgba(30,120,85,.72); --hero-to: rgba(44,201,167,.78); }
+  body[data-theme="forest"] .file.active {
+    background: linear-gradient(180deg, #143326, #10241b); border-color: #2cc9a7; }
+  body[data-theme="ocean"] { --color-background: #0f1a2e; --color-card: #16233c;
+    --color-border: #28405f; --color-foreground: #dfe9f7; --color-muted: #1c2c47;
+    --color-primary: #4f8ef7; --glow-opacity: .45;
+    --glow-a: #2456a8; --glow-b: #4f8ef7;
+    --hero-from: rgba(25,55,110,.82); --hero-mid: rgba(50,110,200,.72); --hero-to: rgba(79,142,247,.78); }
+  body[data-theme="ocean"] .file.active {
+    background: linear-gradient(180deg, #1a2c4e, #142238); border-color: #4f8ef7; }
+  body[data-theme="sunset"] { --color-background: #1c1410; --color-card: #262019;
+    --color-border: #4a3826; --color-foreground: #f5e8d8; --color-muted: #2e2620;
+    --color-primary: #e8822a; --glow-opacity: .45;
+    --glow-a: #8a4a1a; --glow-b: #e8822a;
+    --hero-from: rgba(150,60,20,.82); --hero-mid: rgba(200,110,35,.72); --hero-to: rgba(232,150,60,.78); }
+  body[data-theme="sunset"] .file.active {
+    background: linear-gradient(180deg, #3a2a1a, #2a1f14); border-color: #e8822a; }
+  body[data-theme="mint"] { --color-background: #eef7f3; --color-card: #fff;
+    --color-border: #d4e8df; --color-foreground: #16352a; --color-muted: #ddeee6;
+    --color-primary: #22a06b; --glow-opacity: .2;
+    --glow-a: #22a06b; --glow-b: #7fd6b2;
+    --hero-from: rgba(20,90,65,.82); --hero-mid: rgba(34,160,107,.72); --hero-to: rgba(60,190,140,.78); }
+  body[data-theme="mint"] .file.active {
+    background: linear-gradient(180deg, #e2f3ea, #d2ecdf); border-color: #22a06b; }
+  /* 主题面板：顶栏右下浮层，色卡圆点 + 名称 */
+  .theme-panel { position: absolute; top: calc(100% + 8px); right: 16px; z-index: 10;
+    background: var(--color-card, #fff); color: var(--color-foreground, #18181b);
+    border: 1px solid var(--color-border, #e5e5ef); border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.25); padding: 6px; min-width: 150px; }
+  .theme-opt { display: flex; align-items: center; gap: 8px; font-size: 13px;
+    padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .theme-opt:hover { background: var(--color-muted, #eceaf6); }
+  .theme-opt.sel { font-weight: 700; }
+  .theme-opt .dot { width: 14px; height: 14px; border-radius: 50%;
+    border: 1px solid var(--color-border, #ccc); flex: none; }
   /* 目录浏览与隐藏：复用现有圆角/字号，不引入新组件 */
   .toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
   .toolbar input { flex: 1; min-width: 160px; }
@@ -143,7 +184,16 @@
   <div class="hero-icon">📋</div>
   <div class="hero-text"><h1>日志查看器</h1><p id="heroSub">选择左侧文件开始查看</p></div>
   <div class="hero-status" id="status"><span class="dot"></span><span id="statusText">实时通道未连接</span></div>
-  <button id="themeBtn" class="theme-btn" title="切换主题：跟随→浅色→深色">🔄</button>
+  <button id="themeBtn" class="theme-btn" title="选择主题">🎨</button>
+  <div id="themePanel" class="theme-panel" hidden>
+    <div class="theme-opt" data-t="auto"><span class="dot" style="background:linear-gradient(135deg,#6d5dfc,#2cc9a7)"></span>🔄 跟随</div>
+    <div class="theme-opt" data-t="light"><span class="dot" style="background:#f4f4fb"></span>☀️ 纸白</div>
+    <div class="theme-opt" data-t="dark"><span class="dot" style="background:#13131a"></span>🌙 午夜</div>
+    <div class="theme-opt" data-t="forest"><span class="dot" style="background:#0d1512"></span>🌲 墨绿</div>
+    <div class="theme-opt" data-t="ocean"><span class="dot" style="background:#0f1a2e"></span>🌊 深海</div>
+    <div class="theme-opt" data-t="sunset"><span class="dot" style="background:#1c1410"></span>🌇 黄昏</div>
+    <div class="theme-opt" data-t="mint"><span class="dot" style="background:#eef7f3"></span>🌿 薄荷</div>
+  </div>
 </header>
 <div class="card"><h2>📁 选择日志文件</h2>
 <div id="crumb"></div>
@@ -308,15 +358,39 @@ async function doSearch() {
   $("info").textContent = "";
   saveCond(); // 搜成功才记条件，避免脏条件污染
 }
-// 主题三档：auto 跟随宿主 / light 浅色 / dark 深色；存 storage 持久化，失败不阻塞
+// 多主题：id 存 storage 持久化；auto 跟随宿主，其余走 data-theme 变量覆盖
+const THEMES = [
+  { id: "auto", name: "跟随", icon: "🔄", dot: "linear-gradient(135deg,#6d5dfc,#2cc9a7)" },
+  { id: "light", name: "纸白", icon: "☀️", dot: "#f4f4fb" },
+  { id: "dark", name: "午夜", icon: "🌙", dot: "#13131a" },
+  { id: "forest", name: "墨绿", icon: "🌲", dot: "#0d1512" },
+  { id: "ocean", name: "深海", icon: "🌊", dot: "#0f1a2e" },
+  { id: "sunset", name: "黄昏", icon: "🌇", dot: "#1c1410" },
+  { id: "mint", name: "薄荷", icon: "🌿", dot: "#eef7f3" },
+];
 let theme = "auto";
-const themeIcon = { auto: "🔄", light: "☀️", dark: "🌙" };
+const themeById = id => THEMES.find(t => t.id === id);
 function applyTheme(t) {
+  if (!themeById(t)) t = "auto";
   theme = t;
   if (t === "auto") document.body.removeAttribute("data-theme");
   else document.body.setAttribute("data-theme", t);
-  const b = $("themeBtn");
-  if (b) { b.textContent = themeIcon[t]; b.title = "切换主题：当前" + ({ auto: "跟随", light: "浅色", dark: "深色" })[t]; }
+  const b = $("themeBtn"), m = themeById(t);
+  if (b) { b.textContent = "🎨"; b.title = "选择主题：当前" + m.name; }
+  renderThemePanel();
+}
+// 面板选项：色卡圆点 + 图标 + 名称，当前项加粗
+// 面板选中态：静态选项只更新 .sel，不重渲染内容（渲染失败即空白，故静态化）
+function renderThemePanel() {
+  document.querySelectorAll("#themePanel .theme-opt").forEach(o =>
+    o.classList.toggle("sel", o.dataset.t === theme));
+}
+function toggleThemePanel(show) {
+  const p = $("themePanel");
+  if (!p) return;
+  const open = show !== undefined ? show : p.hidden;
+  if (open) renderThemePanel();
+  p.hidden = !open;
 }
 async function saveTheme() {
   try { if (window.dbxPlugin.capabilities.storage) await window.dbxPlugin.storage.set("theme", theme); } catch {}
@@ -324,13 +398,9 @@ async function saveTheme() {
 async function loadTheme() {
   try { if (window.dbxPlugin.capabilities.storage) {
     const t = await window.dbxPlugin.storage.get("theme");
-    if (t === "light" || t === "dark") { applyTheme(t); return; }
-  } } catch {}
+    if (themeById(t)) { applyTheme(t); return; }
+  } } catch {} // 存储失败不阻塞主流程
   applyTheme("auto");
-}
-function cycleTheme() {
-  applyTheme(theme === "auto" ? "light" : theme === "light" ? "dark" : "auto");
-  saveTheme();
 }
 async function saveCond() {
   try { if (window.dbxPlugin.capabilities.storage)
@@ -411,7 +481,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("next").onclick = () => { state.page++; doSearch().catch(e => { state.page--; $("info").textContent = e.message; }); };
   $("tail").onclick = () => toggleTail().catch(e => $("info").textContent = "实时监控失败：" + e.message);
   $("download").onclick = doDownload;
-  $("themeBtn").onclick = cycleTheme;
+  $("themeBtn").onclick = e => { e.stopPropagation(); toggleThemePanel(); };
+  $("themePanel").onclick = e => { const o = e.target.closest(".theme-opt");
+    if (o) { applyTheme(o.dataset.t); saveTheme(); toggleThemePanel(false); } };
+  // 点面板外关闭（按钮自身已 stopPropagation，不冲突）
+  document.addEventListener("click", e => { const p = $("themePanel");
+    if (p && !p.hidden && !e.target.closest("#themePanel,#themeBtn")) toggleThemePanel(false); });
   if (!window.dbxPlugin) { $("info").textContent = "不在 DBX 宿主内：请经 DBX 工作台或 dbx-plugin dev 打开"; return; }
   await window.dbxPlugin.ready;
   state.connId = window.dbxPlugin.context && window.dbxPlugin.context.connectionId;
