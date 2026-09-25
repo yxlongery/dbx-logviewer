@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "dbx-plugin-dbx-logviewer"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 dependencies = [
  "dbx-plugin-sdk",
  "serde_json",
