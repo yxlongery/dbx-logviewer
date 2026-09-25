@@ -15,6 +15,8 @@
 - 🔍 **搜索**：关键字模糊 ＋ 级别（ALL / ERROR / WARN / INFO / DEBUG / TRACE）＋ 时间范围（含近10分钟/1小时/3天/1周快捷）＋ 分页 ＋ 正序/倒序；搜索条件自动记住，下次打开沿用（`logs/search`）
 - ⏱ **实时监控**：从末尾 200 行起播，后台轮询增量经 `logs/append` 事件推送，支持自动滚动，一键启停（`logs/tail` / `logs/stop`）
 - ⬇ **下载**：按 2000 行分块拉取、前端拼装后经 fileTransfer 落盘，Web 宿主自动回退 Blob 下载（`logs/downloadChunk`）
+- 🎨 **外观**：8 套主题（🖥️ DBX 原生默认，对齐宿主样式；另有纸白/午夜/墨绿/深海/黄昏/薄荷/跟随），顶栏 🎨 面板切换，偏好自动记住；特效开关（实时流光/级别分布/骨架屏/快捷键提示）独立持久化
+- ⌘ **命令面板**：`Ctrl+K` 模糊搜文件、历史关键字与快捷操作（搜 ERROR/WARN、开关实时、下载），键盘上下+回车直达
 - 🛡️ **安全**：日志原文插 DOM 前 HTML 转义；相对路径经 canonicalize 约束在日志目录内（含 `..`/绝对一律拒绝）；隐藏名单只存界面状态
 
 ## 🚀 快速上手
@@ -50,6 +52,13 @@
 - **实时监控**：从末尾 200 行起播，新行自动追加；`自动滚动` 勾上时跟到底；切换文件/隐藏当前文件前先停监控
 - **下载**：按当前关键字+级别过滤，分块拉取后经 fileTransfer 落盘（桌面端弹保存框，Web 端走 Blob）；大文件多轮拉取，进度显示在提示行
 
+### 外观主题与效率工具
+
+- **主题**：顶栏 🎨 面板切换 8 套主题（🖥️ DBX 原生默认，与工作台样式统一；另有跟随/纸白/午夜/墨绿/深海/黄昏/薄荷），偏好自动记住；同面板可开关特效（实时流光/级别分布/骨架屏/快捷键提示）
+- **命令面板**：顶栏 ⌘ 按钮或 `Ctrl+K`，模糊搜文件名、历史关键字与快捷操作，`↑/↓` 选择、`回车` 执行、`Esc` 关闭
+- **快捷键**：`/` 聚焦关键字、`t` 开关实时、`←/→` 翻页；底部有提示行（可在特效开关里隐藏）
+- **级别分布条**：搜索结果顶部红/黄/蓝占比（当前页近似），悬停看数量
+
 ## ❓ 常见问题
 
 - 看不到某目录：先确认容器内路径存在（`docker exec dbx ls /logs/...`），再确认连接根目录包含它；compose 子路径挂载必须落在独立顶层，勿与 `/app/data` 嵌套
@@ -72,7 +81,7 @@
 
 ## English Summary
 
-**Log Viewer** is a DBX plugin for browsing server `.log` files: directory drill-down (breadcrumb + filter + sort), paged search (keyword + level + time range with quick ranges + sort), live tailing via `logs/append` events, chunked download, plus UI-only hide (never deletes files).
+**Log Viewer** is a DBX plugin for browsing server `.log` files: directory drill-down (breadcrumb + filter + sort), paged search (keyword + level + time range with quick ranges + sort), live tailing via `logs/append` events, chunked download, plus UI-only hide (never deletes files). UI extras: 8 themes (DBX-native by default), `Ctrl+K` command palette, live flow glow, per-level distribution bar, skeleton loading and keyboard shortcuts (`/`, `t`, `←/→`).
 
 - Install from the DBX store (or a `.dbxp` in [Releases](https://github.com/yxlongery/dbx-logviewer/releases)), create a connection with comma-separated log roots (e.g. `/app/data,/logs`; mount scattered logs as independent top-level volumes like `/logs/autofeedemby:ro`, never nested under `/app/data`), then open the workbench from that connection.
 - Limits: lists `.log` / `.out` only; ≤ 500 rows/page (default 100); at most 20000 matched rows per search (truncated with notice); tail starts from the last 200 lines.
