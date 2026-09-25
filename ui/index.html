@@ -82,8 +82,8 @@ const fmtTime = t => t ? new Date(t*1000).toLocaleString("zh-CN",{hour12:false})
 // datetime-local(2026-08-30T11:04)→后端宽松解析(2026-08-30 11:04:20)：补秒+空格
 const normTime = v => v ? v.replace("T"," ").slice(0,16)+":00" : "";
 
-async function invoke(method, params, timeoutMs=60000) {
-  return window.dbxPlugin.invoke(method, { connectionId: state.connId, ...params }, { timeoutMs });
+async function invoke(method, params, options={timeoutMs:60000}) {
+  return window.dbxPlugin.invoke(method, { connectionId: state.connId, ...params }, options);
 }
 function lineHtml(no, text) {
   let h = esc(text), kw = $("keyword").value.trim();
