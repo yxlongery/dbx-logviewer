@@ -32,3 +32,4 @@
 - `origin` 为 `ssh` 形态（宿主 GitHub 独立 key 直推）；容器内无私钥，凡访问远端的操作（fetch/pull/ls-remote/push）会失败，本地操作正常
 - `push` 固定走宿主：`ssh nas 'cd /vol1/1000/docker/opencode/data/workspace/dbx-logviewer && git push origin main'`
 - 宿主侧曾报 `dubious ownership`，已加 `safe.directory` 例外（宿主本地 git config，不进提交）
+- 容器内 GitHub key 已配（2026-09-25）：私钥 `id_ed25519_github` 在持久卷 ssh 目录、`config` 有 `Host github.com` 段；容器内远端操作加 `GIT_SSH_COMMAND="ssh -F /root/.local/share/opencode/ssh/config"` 前缀即可直推，无需再走宿主
