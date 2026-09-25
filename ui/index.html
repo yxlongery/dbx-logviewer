@@ -148,6 +148,32 @@
     --hero-from: rgba(20,90,65,.82); --hero-mid: rgba(34,160,107,.72); --hero-to: rgba(60,190,140,.78); }
   body[data-theme="mint"] .file.active {
     background: linear-gradient(180deg, #e2f3ea, #d2ecdf); border-color: #22a06b; }
+  /* ===== DBX 原生：对齐宿主 daisyUI token；浅/深双档跟随系统色彩方案 ===== */
+  /* 取值来源：调试外壳页 light/dark 两套 --color-base-*/--color-primary（oklch 转 hex 近似） */
+  body[data-theme="dbx"] { color-scheme: light dark;
+    --color-background: light-dark(#fafafa, #191e24);
+    --color-card: light-dark(#ffffff, #1d232a);
+    --color-border: light-dark(#f1f1f1, #15191e);
+    --color-foreground: light-dark(#28282e, #f4f6fb);
+    --color-muted: light-dark(#f1f1f1, #15191e);
+    --color-primary: light-dark(#5f3dc4, #7c5cf0);
+    --radius-lg: 8px; --glow-opacity: 0; }
+  /* 原生平面：顶栏去渐变去玻璃，卡片/按钮去阴影，圆角向 daisyUI 看齐（field 4px/box 8px） */
+  body[data-theme="dbx"] .hero { background: var(--color-card); color: var(--color-foreground);
+    border: 1px solid var(--color-border); box-shadow: none;
+    backdrop-filter: none; -webkit-backdrop-filter: none; }
+  body[data-theme="dbx"] .hero-icon, body[data-theme="dbx"] .hero-status { background: var(--color-muted); }
+  body[data-theme="dbx"] .card { box-shadow: none; }
+  body[data-theme="dbx"] button { border-radius: 4px; box-shadow: none; }
+  body[data-theme="dbx"] button:hover:not(:disabled) { transform: none; }
+  body[data-theme="dbx"] #quickrow button { border-radius: 4px; }
+  body[data-theme="dbx"] input, body[data-theme="dbx"] select { border-radius: 4px; }
+  body[data-theme="dbx"] .file { border-radius: 8px; }
+  body[data-theme="dbx"] .file:hover { transform: none; box-shadow: none; border-color: var(--color-primary); }
+  body[data-theme="dbx"] .file.active { background: var(--color-card);
+    border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
+  body[data-theme="dbx"] #logs { border-radius: 8px; }
+  body[data-theme="dbx"] #dirs .dir { border-radius: 4px; }
   /* 主题面板：顶栏右下浮层，色卡圆点 + 名称 */
   .theme-panel { position: absolute; top: calc(100% + 8px); right: 16px; z-index: 10;
     background: var(--color-card, #fff); color: var(--color-foreground, #18181b);
@@ -238,6 +264,7 @@
   <button id="themeBtn" class="theme-btn" title="选择主题">🎨</button>
   <button id="cmdBtn" class="theme-btn" title="命令面板 (Ctrl+K)">⌘</button>
   <div id="themePanel" class="theme-panel" hidden>
+    <div class="theme-opt" data-t="dbx"><span class="dot" style="background:#fafafa"></span>🖥️ DBX 原生</div>
     <div class="theme-opt" data-t="auto"><span class="dot" style="background:linear-gradient(135deg,#6d5dfc,#2cc9a7)"></span>🔄 跟随</div>
     <div class="theme-opt" data-t="light"><span class="dot" style="background:#f4f4fb"></span>☀️ 纸白</div>
     <div class="theme-opt" data-t="dark"><span class="dot" style="background:#13131a"></span>🌙 午夜</div>
@@ -442,6 +469,7 @@ async function doSearch() {
 }
 // 多主题：id 存 storage 持久化；auto 跟随宿主，其余走 data-theme 变量覆盖
 const THEMES = [
+  { id: "dbx", name: "DBX 原生", icon: "🖥️", dot: "#fafafa" },
   { id: "auto", name: "跟随", icon: "🔄", dot: "linear-gradient(135deg,#6d5dfc,#2cc9a7)" },
   { id: "light", name: "纸白", icon: "☀️", dot: "#f4f4fb" },
   { id: "dark", name: "午夜", icon: "🌙", dot: "#13131a" },
@@ -450,10 +478,10 @@ const THEMES = [
   { id: "sunset", name: "黄昏", icon: "🌇", dot: "#1c1410" },
   { id: "mint", name: "薄荷", icon: "🌿", dot: "#eef7f3" },
 ];
-let theme = "auto";
+let theme = "dbx";
 const themeById = id => THEMES.find(t => t.id === id);
 function applyTheme(t) {
-  if (!themeById(t)) t = "auto";
+  if (!themeById(t)) t = "dbx";
   theme = t;
   if (t === "auto") document.body.removeAttribute("data-theme");
   else document.body.setAttribute("data-theme", t);
@@ -482,7 +510,7 @@ async function loadTheme() {
     const t = await window.dbxPlugin.storage.get("theme");
     if (themeById(t)) { applyTheme(t); return; }
   } } catch {} // 存储失败不阻塞主流程
-  applyTheme("auto");
+  applyTheme("dbx"); // 默认 DBX 原生；老存量 auto/light/dark 照常兼容
 }
 // 特效开关：flow 流光 / dist 分布条 / skel 骨架屏 / keys 快捷键提示；存 storage 持久化
 const FX_KEYS = ["flow", "dist", "skel", "keys"];
