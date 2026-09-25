@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "io.github.yxlonger.logviewer",
   "name": "Log Viewer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "yxlonger",
   "description": "查看服务器 .log 日志，支持滚动查询与模糊搜索",
   "icon": "assets/plugin.svg",
