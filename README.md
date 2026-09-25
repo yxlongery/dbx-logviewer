@@ -20,7 +20,7 @@
 ## 🚀 快速上手
 
 1. 在 DBX 插件商店安装本插件（或从 [Releases](https://github.com/yxlongery/dbx-logviewer/releases) 下载 `.dbxp` 手动安装）
-2. 新建「日志查看器连接」，填写日志根目录（如 `/app/data`，分散的日志挂载到其子目录下，如 `/app/data/autofeedemby`），测试连通
+2. 新建「日志查看器连接」，填写日志根目录（多目录逗号分隔，如 `/app/data,/logs`，分散的日志挂载到独立顶层如 `/logs/autofeedemby`，与 `/app/data` 无嵌套、顺序无关），测试连通
 3. 从该连接进入工作台 → 面包屑下钻选文件 → 搜索 / 实时监控 / 下载
 
 ## 🖥️ 界面说明

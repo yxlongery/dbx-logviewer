@@ -42,7 +42,7 @@
           "key": "log_dir",
           "label": "Log directory",
           "type": "text",
-          "placeholder": "/app/data",
+          "placeholder": "/app/data,/logs",
           "binding": "config",
           "required": true
         }
@@ -68,7 +68,7 @@
           "description": "浏览服务器 .log 文件，支持搜索与实时滚动。",
           "fields": {
             "display_name": { "label": "连接名称" },
-            "log_dir": { "label": "日志目录" }
+            "log_dir": { "label": "日志根目录（多目录逗号分隔）" }
           }
         },
         "io.github.yxlonger.logviewer.workbench": {

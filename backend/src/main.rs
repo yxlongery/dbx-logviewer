@@ -11,10 +11,10 @@ use std::time::Duration;
 use dbx_plugin_sdk::{PluginEmitter, PluginError, PluginHandler, PluginMetadata, PluginServer, RequestContext};
 use serde_json::{json, Value};
 
-// 会话只存非敏感信息：目录与模式。密码/私钥由宿主保管，绝不落内存日志。
+// 会话只存非敏感信息：目录列表（逗号分隔多根）。密码/私钥由宿主保管，绝不落内存日志。
 #[derive(Clone)]
 struct Session {
-    log_dir: String,
+    log_dirs: Vec<String>,
 }
 
 #[derive(Default)]
@@ -61,27 +61,42 @@ impl PluginHandler for Plugin {
 }
 
 impl Plugin {
-    // connection/test：只校验目录可读，不建会话
+    // connection/test：只校验各根目录可读，不建会话
     fn test(&self, params: &Value) -> Result<Value, PluginError> {
         let conn = params.get("connection").cloned().unwrap_or_default();
-        let dir = str_field(&conn, &["log_dir"]).ok_or_else(|| PluginError::new(-32602, "Missing log_dir"))?;
-        let count = count_log_files(&dir)?;
-        Ok(json!({ "success": true, "message": format!("目录可读，共 {count} 个日志文件：{dir}") }))
+        let raw = str_field(&conn, &["log_dir"]).ok_or_else(|| PluginError::new(-32602, "Missing log_dir"))?;
+        let dirs = parse_roots(&raw)?;
+        let mut total = 0;
+        for d in &dirs {
+            total += count_log_files(d)?;
+        }
+        Ok(json!({ "success": true, "message": format!("目录可读，共 {total} 个日志文件：{raw}") }))
     }
 
-    // connection/connect：校验目录并注册会话
+    // connection/connect：校验各根目录并注册会话
     fn connect(&self, params: &Value) -> Result<Value, PluginError> {
         let conn = params.get("connection").cloned().unwrap_or_default();
         let id = conn
             .get("id")
             .and_then(Value::as_str)
             .ok_or_else(|| PluginError::new(-32602, "Missing connection id"))?;
-        let dir = str_field(&conn, &["log_dir"]).ok_or_else(|| PluginError::new(-32602, "Missing log_dir"))?;
-        count_log_files(&dir)?; // 提前暴露目录问题，不等首次 search 才报错
+        let raw = str_field(&conn, &["log_dir"]).ok_or_else(|| PluginError::new(-32602, "Missing log_dir"))?;
+        let dirs = parse_roots(&raw)?;
+        for d in &dirs {
+            count_log_files(d)?; // 提前暴露目录问题，不等首次 browse 才报错
+        }
+        // 根短名（basename）必须唯一，否则 browse 首段无法定位
+        let mut seen = std::collections::HashSet::new();
+        for d in &dirs {
+            let n = root_name(d);
+            if !seen.insert(n.clone()) {
+                return Err(PluginError::new(-32602, format!("根目录重名：{n}")));
+            }
+        }
         self.sessions
             .lock()
             .map_err(|_| PluginError::new(-32000, "Session registry is poisoned"))?
-            .insert(id.to_string(), Session { log_dir: dir });
+            .insert(id.to_string(), Session { log_dirs: dirs });
         Ok(json!({ "success": true }))
     }
 
@@ -108,18 +123,18 @@ impl Plugin {
         Ok(json!({ "success": true }))
     }
 
-    // logs/browse：列相对目录下一层（子目录 + .log/.out 文件），点选下钻代替手输路径
+    // logs/browse：空串列各根短名；非空首段为根短名，余下为该根下相对目录；点选下钻代替手输路径
     fn browse(&self, params: &Value) -> Result<Value, PluginError> {
         let session = self.session(params)?;
         let dir_rel = params.get("dir").and_then(Value::as_str).unwrap_or("").trim().to_string();
-        // 空串为根；非空走同一防穿越约束（.. / 绝对一律拒绝，拼接后 canonicalize 校验仍在会话目录内）
-        let dir_abs = if dir_rel.is_empty() {
-            std::path::Path::new(&session.log_dir).canonicalize()
-                .map_err(|e| PluginError::new(-32000, format!("无法读取目录 {}：{e}", session.log_dir)))?
-                .to_string_lossy().to_string()
-        } else {
-            safe_join(&session.log_dir, &dir_rel)?
-        };
+        // 空串为根：直接列各根短名，不读盘
+        if dir_rel.is_empty() {
+            let mut dirs: Vec<Value> = session.log_dirs.iter().map(|d| json!({ "name": root_name(d) })).collect();
+            dirs.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+            return Ok(json!({ "dir": "", "dirs": dirs, "entries": [] }));
+        }
+        // 非空走同一防穿越约束（.. / 绝对一律拒绝，拼接后 canonicalize 校验仍在所属根内）
+        let dir_abs = safe_join(&session, &dir_rel)?;
         if !std::fs::metadata(&dir_abs).map(|m| m.is_dir()).unwrap_or(false) {
             return Err(PluginError::new(-32602, "不是目录"));
         }
@@ -145,17 +160,18 @@ impl Plugin {
             if !ext_ok {
                 continue;
             }
-            let meta = entry.metadata().map_err(|e| PluginError::new(-32000, format!("读取文件元信息失败：{e}")))?;
+            // 断裂软链等坏条目：列出但大小时间为 0，不整层失败（点选时 search 报路径不存在）
+            let (size, modified_at) = entry.metadata().map(|m| (m.len(), m.modified().ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs()).unwrap_or(0))).unwrap_or((0, 0));
             // 链接目标：普通文件为 null，软链返回目标绝对路径（文本节点展示用）
             let link_target = std::fs::read_link(&path).ok().map(|p| p.to_string_lossy().to_string());
             // 相对路径透给前端：search/tail/download 直接用它，不再拼
             let rel = if dir_rel.is_empty() { name } else { format!("{dir_rel}/{name}") };
             entries.push(json!({
                 "name": rel,
-                "size": meta.len(),
-                "modified_at": meta.modified().ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs()).unwrap_or(0),
+                "size": size,
+                "modified_at": modified_at,
                 "target": link_target,
             }));
         }
@@ -176,8 +192,8 @@ impl Plugin {
         let page_size = (params.get("pageSize").and_then(Value::as_u64).unwrap_or(100) as usize).clamp(1, MAX_PAGE_SIZE);
         let newest_first = params.get("sort").and_then(Value::as_str).unwrap_or("desc") != "asc";
 
-        // 路径穿越防护：只允许会话目录下的直接子文件
-        let path = safe_join(&session.log_dir, file)?;
+        // 路径约束：首段根短名 + canonicalize 校验在所属根内
+        let path = safe_join(&session, file)?;
         let start_num = if start.trim().is_empty() { None } else { parse_time_num(&start) };
         let end_num = if end.trim().is_empty() { None } else { parse_time_num(&end) };
 
@@ -216,7 +232,7 @@ impl Plugin {
     fn tail(&self, params: &Value, emitter: &PluginEmitter) -> Result<Value, PluginError> {
         let session = self.session(params)?;
         let file = params.get("file").and_then(Value::as_str).ok_or_else(|| PluginError::new(-32602, "Missing file"))?;
-        let path = safe_join(&session.log_dir, file)?;
+        let path = safe_join(&session, file)?;
         let keyword = params.get("keyword").and_then(Value::as_str).unwrap_or("").trim().to_string();
         let level = params.get("level").and_then(Value::as_str).unwrap_or("ALL").to_ascii_uppercase();
         let last_n = params.get("lastN").and_then(Value::as_u64).unwrap_or(200).min(1000) as usize;
@@ -272,7 +288,7 @@ impl Plugin {
         let keyword = params.get("keyword").and_then(Value::as_str).unwrap_or("").trim().to_string();
         let level = params.get("level").and_then(Value::as_str).unwrap_or("ALL").to_ascii_uppercase();
 
-        let path = safe_join(&session.log_dir, file)?;
+        let path = safe_join(&session, file)?;
         let f = File::open(&path).map_err(|e| PluginError::new(-32000, format!("无法打开文件 {file}：{e}")))?;
         let mut lines = Vec::new();
         let mut skipped = 0;
@@ -346,14 +362,40 @@ fn count_log_files(dir: &str) -> Result<usize, PluginError> {
     Ok(n)
 }
 
-// 路径约束：file 为相对路径（允许子目录，如 autofeedemby/20260925.log），禁绝对/..；拼接后 canonicalize 校验仍在会话目录内
-fn safe_join(dir: &str, file: &str) -> Result<String, PluginError> {
-    if file.trim().is_empty() || file.starts_with('/') || file.contains('\\') || file.contains("..") {
+// 多根解析：log_dir 逗号分隔（如 "/app/data,/logs"），去空去尾斜杠，至少一根
+fn parse_roots(raw: &str) -> Result<Vec<String>, PluginError> {
+    let dirs: Vec<String> = raw.split(',').map(|s| s.trim().trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty()).collect();
+    if dirs.is_empty() {
+        return Err(PluginError::new(-32602, "Missing log_dir"));
+    }
+    for d in &dirs {
+        if !d.starts_with('/') {
+            return Err(PluginError::new(-32602, format!("根目录必须是绝对路径：{d}")));
+        }
+    }
+    Ok(dirs)
+}
+
+// 根短名：取 basename（如 /app/data → data），browse 首段定位用；重名在 connect 拒绝
+fn root_name(dir: &str) -> String {
+    dir.rsplit('/').next().unwrap_or(dir).to_string()
+}
+
+// 路径约束：rel 首段为根短名（如 logs/autofeedemby/20260925.log），禁绝对/..；拼接后 canonicalize 校验仍在所属根内
+fn safe_join(session: &Session, rel: &str) -> Result<String, PluginError> {
+    let file = rel.trim();
+    if file.is_empty() || file.starts_with('/') || file.contains('\\') || file.contains("..") {
         return Err(PluginError::new(-32602, "非法文件名"));
     }
-    let base = std::path::Path::new(dir);
-    let canon_base = base.canonicalize().map_err(|e| PluginError::new(-32000, format!("无法读取目录 {dir}：{e}")))?;
-    let joined = base.join(file);
+    let (root_seg, _rest) = file.split_once('/').map(|(a, b)| (a, Some(b))).unwrap_or((file, None));
+    let base = session.log_dirs.iter().find(|d| root_name(d) == root_seg)
+        .ok_or_else(|| PluginError::new(-32602, "非法文件名"))?;
+    let canon_base = std::path::Path::new(base).canonicalize()
+        .map_err(|e| PluginError::new(-32000, format!("无法读取目录 {base}：{e}")))?;
+    // 首段根短名映射回真实根后拼接余下部分
+    let sub = file[root_seg.len()..].trim_start_matches('/');
+    let joined = std::path::Path::new(base).join(sub);
     let canon = joined.canonicalize().map_err(|e| PluginError::new(-32000, format!("路径不存在 {file}：{e}")))?;
     if !canon.starts_with(&canon_base) {
         return Err(PluginError::new(-32602, "非法文件名"));
@@ -539,12 +581,19 @@ mod tests {
         assert!(!match_line("plain line", "", "ALL", Some(20260830110000), None));
     }
 
+    // 会话构造器：测试用单根/多根快速建 Session
+    fn test_session(dirs: Vec<String>) -> Session {
+        Session { log_dirs: dirs }
+    }
+
     #[test]
     fn safe_join_blocks_traversal() {
-        assert!(safe_join("/var/log/aiban", "../etc/passwd").is_err()); // 穿越
-        assert!(safe_join("/var/log/aiban", "/etc/passwd").is_err()); // 绝对路径
-        assert!(safe_join("/var/log/aiban", "sub\\dir.log").is_err()); // 反斜杠
-        assert!(safe_join("/var/log/aiban", "").is_err()); // 空串
+        let s = test_session(vec!["/var/log/aiban".to_string()]);
+        assert!(safe_join(&s, "../etc/passwd").is_err()); // 穿越
+        assert!(safe_join(&s, "/etc/passwd").is_err()); // 绝对路径
+        assert!(safe_join(&s, "sub\\dir.log").is_err()); // 反斜杠
+        assert!(safe_join(&s, "").is_err()); // 空串
+        assert!(safe_join(&s, "other/a.log").is_err()); // 未知根短名
     }
 
     // 子路径放行是目录浏览的前提：真实建目录验证 canonicalize 链路
@@ -554,15 +603,17 @@ mod tests {
         let sub = base.join("sub");
         std::fs::create_dir_all(&sub).unwrap();
         std::fs::write(sub.join("a.log"), "x\n").unwrap();
-        let b = base.to_str().unwrap();
-        assert!(safe_join(b, "sub/a.log").is_ok()); // 子路径放行
-        assert!(safe_join(b, "sub").is_ok()); // 子目录同样放行（browse 用）
-        assert!(safe_join(b, "sub/../../evil").is_err()); // 拼接后越界
-        assert!(safe_join(b, "no-such-file.log").is_err()); // 不存在
+        let b = base.to_str().unwrap().to_string();
+        let root = root_name(&b);
+        let s = test_session(vec![b]);
+        assert!(safe_join(&s, &format!("{root}/sub/a.log")).is_ok()); // 子路径放行
+        assert!(safe_join(&s, &format!("{root}/sub")).is_ok()); // 子目录同样放行（browse 用）
+        assert!(safe_join(&s, "sub/../../evil").is_err()); // 拼接后越界（含 .. 直接拒绝）
+        assert!(safe_join(&s, &format!("{root}/no-such-file.log")).is_err()); // 不存在
         std::fs::remove_dir_all(&base).ok(); // 测试收尾清理临时目录
     }
 
-    // browse 只列一层：子层与非日志不出，穿越/绝对拒绝
+    // browse 只列一层：子层与非日志不出，穿越/绝对拒绝；断裂链列出不整层失败
     #[test]
     fn browse_lists_one_level() {
         let base = std::env::temp_dir().join("dbx-logviewer-browse");
@@ -574,18 +625,58 @@ mod tests {
         std::fs::write(logs.join("note.txt"), "n\n").unwrap(); // 非日志不列
         let plugin = Plugin::default();
         let conn_id = "browse-test-conn";
-        plugin.sessions.lock().unwrap().insert(conn_id.to_string(), Session { log_dir: logs.to_str().unwrap().to_string() });
-        let root = plugin.browse(&serde_json::json!({ "connectionId": conn_id })).expect("根应成功");
-        assert!(root["dirs"].as_array().unwrap().iter().any(|x| x["name"] == "sub"));
-        let names: Vec<String> = root["entries"].as_array().unwrap().iter()
+        let root = root_name(logs.to_str().unwrap());
+        plugin.sessions.lock().unwrap().insert(conn_id.to_string(),
+            test_session(vec![logs.to_str().unwrap().to_string()]));
+        let r = plugin.browse(&serde_json::json!({ "connectionId": conn_id })).expect("根应成功");
+        assert!(r["dirs"].as_array().unwrap().iter().any(|x| x["name"] == root)); // 根聚合成根短名
+        let s = plugin.browse(&serde_json::json!({ "connectionId": conn_id, "dir": root })).expect("根短名应成功");
+        assert!(s["dirs"].as_array().unwrap().iter().any(|x| x["name"] == "sub"));
+        let names: Vec<String> = s["entries"].as_array().unwrap().iter()
             .map(|x| x["name"].as_str().unwrap().to_string()).collect();
-        assert!(names.contains(&"top.log".to_string()));
+        assert!(names.contains(&format!("{root}/top.log")));
         assert!(!names.iter().any(|n| n.contains("note.txt") || n.contains("a.log"))); // 子层与非日志不出
-        let s = plugin.browse(&serde_json::json!({ "connectionId": conn_id, "dir": "sub" })).expect("子目录应成功");
-        assert_eq!(s["entries"].as_array().unwrap().len(), 1);
-        assert_eq!(s["entries"][0]["name"], "sub/a.log");
+        let s2 = plugin.browse(&serde_json::json!({ "connectionId": conn_id, "dir": format!("{root}/sub") })).expect("子目录应成功");
+        assert_eq!(s2["entries"].as_array().unwrap().len(), 1);
+        assert_eq!(s2["entries"][0]["name"], format!("{root}/sub/a.log"));
         assert!(plugin.browse(&serde_json::json!({ "connectionId": conn_id, "dir": "../" })).is_err()); // 穿越
         assert!(plugin.browse(&serde_json::json!({ "connectionId": conn_id, "dir": "/etc" })).is_err()); // 绝对
+        std::fs::remove_dir_all(&base).ok(); // 测试收尾清理临时目录
+    }
+
+    // 多根：逗号分隔建会话，根间隔离（A 根拼不出 B 根文件），重名拒绝
+    #[test]
+    fn multi_root_isolation() {
+        let base = std::env::temp_dir().join("dbx-logviewer-multiroot");
+        let a = base.join("dataA");
+        let b = base.join("dataB");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(a.join("a.log"), "a\n").unwrap();
+        std::fs::write(b.join("b.log"), "b\n").unwrap();
+        let plugin = Plugin::default();
+        let raw = format!("{},{}", a.to_str().unwrap(), b.to_str().unwrap());
+        let r = plugin.connect(&serde_json::json!({ "connection": { "id": "multi-conn", "log_dir": raw } }));
+        assert!(r.is_ok());
+        let ra = root_name(a.to_str().unwrap());
+        let rb = root_name(b.to_str().unwrap());
+        let root = plugin.browse(&serde_json::json!({ "connectionId": "multi-conn" })).expect("根应成功");
+        let dirs: Vec<String> = root["dirs"].as_array().unwrap().iter()
+            .map(|x| x["name"].as_str().unwrap().to_string()).collect();
+        assert!(dirs.contains(&ra) && dirs.contains(&rb));
+        let s = plugin.search(&serde_json::json!({ "connectionId": "multi-conn",
+            "file": format!("{rb}/b.log"), "page": 1, "pageSize": 10 })).expect("跨根搜索应成功");
+        assert_eq!(s["total"], 1);
+        assert!(plugin.search(&serde_json::json!({ "connectionId": "multi-conn",
+            "file": format!("{ra}/../dataB/b.log"), "page": 1, "pageSize": 10 })).is_err()); // 含 .. 拒绝
+        // 同名根拒绝：x/logs 与 y/logs 短名同为 logs
+        let x = base.join("x").join("logs");
+        let y = base.join("y").join("logs");
+        std::fs::create_dir_all(&x).unwrap();
+        std::fs::create_dir_all(&y).unwrap();
+        let dup = plugin.connect(&serde_json::json!({ "connection": { "id": "dup-conn",
+            "log_dir": format!("{},{}", x.to_str().unwrap(), y.to_str().unwrap()) } }));
+        assert!(dup.is_err());
         std::fs::remove_dir_all(&base).ok(); // 测试收尾清理临时目录
     }
 
