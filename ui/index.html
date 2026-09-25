@@ -209,6 +209,9 @@
   /* 排印：行号 gutter 对齐 + hover 高亮 + 数字等宽 */
   #logs .ln { min-width: 46px; display: inline-block; text-align: right; font-variant-numeric: tabular-nums; }
   #logs > div:hover { filter: brightness(1.35); }
+  /* 换行默认关：pre 不换行 + 横向滚动；开时 pre-wrap 到处可断 */
+  #logs { overflow-x: auto; }
+  #logs > div { white-space: pre; }
   /* 上下文行淡显 + 左虚线；结构化 token 着色（tk-t 时间戳/tk-b 方括号/tk-l* 级别） */
   #logs .ctx { opacity: .55; border-left: 2px dashed #55556e; padding-left: 8px; margin-left: -10px; }
   #logs .tk-t { color: #8fd6c2; }
