@@ -450,13 +450,13 @@ function renderFiles() {
   renderHiddenBar();
 }
 // 隐藏只藏界面、文件保留：名单按连接存 storage，可恢复
+// 直接执行无 confirm：沙盒 iframe 无 allow-modals 时 confirm() 静默返回 false 导致点隐藏没反应；误点用恢复全部找回
 async function doHide(name) {
-  if (!confirm(`仅在界面隐藏（文件保留，可恢复），确认隐藏 ${name}？`)) return;
   if (state.tailing && state.file === name) await toggleTail().catch(()=>{});
-  state.hidden.push(name);
+  if (!state.hidden.includes(name)) state.hidden.push(name);
   if (state.file === name) { state.file = null; $("logs").innerHTML = ""; $("loghead").innerHTML = '未选择文件<span id="rate"></span>'; $("heroSub").textContent = "选择左侧文件开始查看"; }
   await saveHidden(); renderFiles();
-  $("info").textContent = "已隐藏（文件保留）";
+  $("info").textContent = `已隐藏 ${name}（文件保留，可恢复）`;
 }
 function renderHiddenBar() {
   $("hiddenbar").innerHTML = state.hidden.length
