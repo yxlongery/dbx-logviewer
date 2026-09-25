@@ -35,6 +35,11 @@
   #status .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #e03434; margin-right: 6px; }
   #status.live .dot { background: #22a06b; }
   #loghead { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  /* 日志头工具条：标题左 + 排序/换行开关右；换行开时行内 pre-wrap */
+  .logbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .logbar #loghead { flex: 1; min-width: 0; margin-bottom: 0; }
+  .logbar button { flex: none; }
+  #logs.wrap > div { white-space: pre-wrap; word-break: break-all; }
   #logs { height: 420px; overflow-y: auto; background: #14131a; color: #d7d7e3; border-radius: 10px;
     padding: 12px 14px; font-family: var(--font-mono, ui-monospace, monospace); font-size: 12.5px; line-height: 1.7; }
   #logs .ln { color: #7c7c9c; margin-right: 10px; user-select: none; }
@@ -331,7 +336,7 @@
   </div>
   <div class="hint" id="info"></div>
 </div>
-<div class="card"><div id="loghead">未选择文件<span id="rate"></span></div><div id="distbar" class="distbar" hidden><span class="e"></span><span class="w"></span><span class="n"></span></div><div id="logs"></div>
+<div class="card"><div class="logbar"><div id="loghead">未选择文件<span id="rate"></span></div><button id="sortBtn" class="ghost sm" title="切换排序">⇅ 最新在前</button><button id="wrapBtn" class="ghost sm" title="切换自动换行">↵ 换行：关</button></div><div id="distbar" class="distbar" hidden><span class="e"></span><span class="w"></span><span class="n"></span></div><div id="logs"></div>
   <div id="pager"><button id="prev" class="ghost">← 上一页</button>
     <span id="pageinfo"></span><button id="next" class="ghost">下一页 →</button></div>
   <div class="hint kbd-hint">快捷键：<kbd>/</kbd> 搜索 <kbd>t</kbd> 实时 <kbd>←</kbd><kbd>→</kbd> 翻页 <kbd>Ctrl+K</kbd> 命令</div>
@@ -635,11 +640,20 @@ setInterval(() => {
   else if (!state.tailing) el.textContent = "";
   rateN = 0;
 }, 1000);
+function syncSortBtn() {
+  const b = $("sortBtn");
+  if (b) b.textContent = $("sort").value === "asc" ? "⇅ 最早在前" : "⇅ 最新在前";
+}
+function syncWrapBtn() {
+  const on = $("logs").classList.contains("wrap"), b = $("wrapBtn");
+  if (b) b.textContent = on ? "↵ 换行：开" : "↵ 换行：关";
+}
 async function saveCond() {
   try { if (window.dbxPlugin.capabilities.storage)
     await window.dbxPlugin.storage.set("cond", { keyword: $("keyword").value, level: $("level").value,
       pageSize: $("pageSize").value, sort: $("sort").value, dir: state.dir, file: state.file,
-      regex: $("regexCk").checked, context: $("context").value });
+      regex: $("regexCk").checked, context: $("context").value,
+      wrap: $("logs").classList.contains("wrap") });
   } catch {} // 存储失败不阻塞主流程
 }
 async function loadCond() {
@@ -648,6 +662,7 @@ async function loadCond() {
     if (c) { $("keyword").value = c.keyword||""; $("level").value = c.level||"ALL";
       $("pageSize").value = c.pageSize||"100"; $("sort").value = c.sort||"desc";
       $("regexCk").checked = !!c.regex; $("context").value = c.context||"0";
+      $("logs").classList.toggle("wrap", !!c.wrap); syncSortBtn(); syncWrapBtn();
       if (c.dir) state.dir = c.dir; state.resumeFile = c.file||null; }
   } } catch {}
 }
@@ -721,6 +736,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("next").onclick = () => { state.page++; doSearch().catch(e => { state.page--; $("info").textContent = e.message; }); };
   $("tail").onclick = () => toggleTail().catch(e => $("info").textContent = "实时监控失败：" + e.message);
   $("download").onclick = doDownload;
+  // 日志头开关：排序与下拉双向同步并重搜；换行切 class 并随条件记住
+  syncSortBtn(); syncWrapBtn();
+  $("sortBtn").onclick = () => { $("sort").value = $("sort").value === "asc" ? "desc" : "asc";
+    syncSortBtn(); state.page = 1; doSearch().catch(e => $("info").textContent = e.message); };
+  $("sort").onchange = syncSortBtn;
+  $("wrapBtn").onclick = () => { $("logs").classList.toggle("wrap"); syncWrapBtn(); saveCond(); };
   $("themeBtn").onclick = e => { e.stopPropagation(); toggleThemePanel(); };
   $("themePanel").onclick = e => { const o = e.target.closest(".theme-opt");
     if (o) { applyTheme(o.dataset.t); saveTheme(); toggleThemePanel(false); } };
