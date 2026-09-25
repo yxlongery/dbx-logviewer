@@ -204,6 +204,14 @@
   /* 排印：行号 gutter 对齐 + hover 高亮 + 数字等宽 */
   #logs .ln { min-width: 46px; display: inline-block; text-align: right; font-variant-numeric: tabular-nums; }
   #logs > div:hover { filter: brightness(1.35); }
+  /* 上下文行淡显 + 左虚线；结构化 token 着色（tk-t 时间戳/tk-b 方括号/tk-l* 级别） */
+  #logs .ctx { opacity: .55; border-left: 2px dashed #55556e; padding-left: 8px; margin-left: -10px; }
+  #logs .tk-t { color: #8fd6c2; }
+  #logs .tk-b { color: #9a9ab5; }
+  #logs .tk-le { color: #ff8f8f; font-weight: 700; }
+  #logs .tk-lw { color: #ffd479; font-weight: 700; }
+  #logs .tk-li { color: #7fb8ff; font-weight: 700; }
+  #logs .tk-lo { color: #b9b9d0; font-weight: 700; }
   .file span, #pageinfo { font-variant-numeric: tabular-nums; }
   /* 级别分布条：红/黄/蓝 stacked bar（body[data-fx-dist="off"] 隐藏） */
   .distbar { display: flex; height: 6px; border-radius: 3px; overflow: hidden;
@@ -278,6 +286,7 @@
     <div class="theme-opt fx-opt" data-fx="dist"><span class="check">✓</span>📊 级别分布</div>
     <div class="theme-opt fx-opt" data-fx="skel"><span class="check">✓</span>⏳ 骨架屏</div>
     <div class="theme-opt fx-opt" data-fx="keys"><span class="check">✓</span>⌨️ 快捷键提示</div>
+    <div class="theme-opt fx-opt" data-fx="struct"><span class="check">✓</span>🎨 结构着色</div>
   </div>
 </header>
 <div class="card"><h2>📁 选择日志文件</h2>
@@ -288,7 +297,7 @@
 <div id="hiddenbar"></div></div>
 <div class="card"><h2>🔍 搜索条件</h2>
   <div class="grid">
-    <div><label>关键字</label><input id="keyword" placeholder="输入搜索关键字" /></div>
+    <div><label>关键字 <label style="display:inline;font-weight:400"><input id="regexCk" type="checkbox" style="width:auto" /> 正则</label></label><input id="keyword" placeholder="输入搜索关键字，勾正则用表达式" /></div>
     <div><label>日志级别</label><select id="level">
       <option value="ALL">全部</option><option>ERROR</option><option>WARN</option>
       <option>INFO</option><option>DEBUG</option><option>TRACE</option></select></div>
@@ -300,6 +309,12 @@
     <div><label>结束时间（留空=至今）</label><input id="end" type="datetime-local" /></div>
     <div><label>排序方式</label><select id="sort">
       <option value="desc">最新在前</option><option value="asc">最早在前</option></select></div>
+  </div>
+  <div class="grid">
+    <div><label>上下文行数</label><select id="context">
+      <option value="0">仅命中行</option><option value="2">前后 2 行</option>
+      <option value="5">前后 5 行</option><option value="10">前后 10 行</option></select></div>
+    <div style="grid-column: span 2"><label>&nbsp;</label><div class="hint" style="margin-top:0">正则支持 . * + ? | ( ) [ ] ^ $ \d \w \s {m,n}；非法表达式后端会报错提示</div></div>
   </div>
   <div class="row" id="quickrow">
     <button class="ghost sm" data-min="10">近10分钟</button>
@@ -335,15 +350,33 @@ const normTime = v => v ? v.replace("T"," ").slice(0,16)+":00" : "";
 async function invoke(method, params, options={timeoutMs:60000}) {
   return window.dbxPlugin.invoke(method, { connectionId: state.connId, ...params }, options);
 }
-function lineHtml(no, text, fresh) {
-  let h = esc(text), kw = $("keyword").value.trim();
-  if (kw) h = h.split(esc(kw)).join("<mark>"+esc(kw)+"</mark>");
+function lineHtml(no, text, fresh, isCtx) {
+  let h = esc(text);
+  // 结构化着色先行：命中片段进占位 stash，关键字高亮切不到 NUL 占位符，最后换回
+  const stash = [];
+  if (fx.struct) h = structHtml(h, stash);
+  const kw = $("keyword").value.trim();
+  // 正则模式下 kw 是表达式，字面 split 无意义则跳过高亮（后端已按正则过滤）
+  if (kw && !$("regexCk").checked) h = h.split(esc(kw)).join("<mark>"+esc(kw)+"</mark>");
+  if (fx.struct) h = h.replace(/\x00(\d+)\x00/g, (_, i) => stash[+i]);
   const cls = /ERROR|FATAL/i.test(text) ? "err" : /WARN/i.test(text) ? "warn" : "";
-  // fresh 实时行滑入动画由 CSS .fresh 承载，静态搜索行不带
-  return `<div class="${cls}${fresh ? " fresh" : ""}"><span class="ln">${no}</span>${h}</div>`;
+  // fresh 实时行滑入动画由 CSS .fresh 承载；ctx 上下文行淡显
+  return `<div class="${cls}${fresh ? " fresh" : ""}${isCtx ? " ctx" : ""}"><span class="ln">${no}</span>${h}</div>`;
+}
+// 结构化着色（输入已转义）：行首时间戳 + [LEVEL] token + 其他方括号段；命中片段压 stash 返回占位
+function structHtml(h, stash) {
+  const tok = (cls, m) => { stash.push(`<span class="${cls}">${m}</span>`); return "\x00" + (stash.length - 1) + "\x00"; };
+  h = h.replace(/^\d{4}[-/]\d{1,2}[-/]\d{1,2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/,
+    m => tok("tk-t", m));
+  h = h.replace(/\[(INF|DBG|WRN|ERR|TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\]/gi, m => {
+    const c = /ERR|FATAL/i.test(m) ? "tk-le" : /WARN/i.test(m) ? "tk-lw" : /INFO|INF/i.test(m) ? "tk-li" : "tk-lo";
+    return tok(c, m);
+  });
+  h = h.replace(/\[[^\][<>]{1,40}\]/g, m => tok("tk-b", m)); // 线程/类名等方括号段淡色
+  return h;
 }
 function render(lines) {
-  $("logs").innerHTML = lines.map(l => lineHtml(l.no, l.text)).join("") || '<div class="empty"><span class="big">🔎</span>无匹配日志，换个关键字试试</div>';
+  $("logs").innerHTML = lines.map(l => lineHtml(l.no, l.text, false, l.match === false)).join("") || '<div class="empty"><span class="big">🔎</span>无匹配日志，换个关键字试试</div>';
   if ($("autoscroll").checked) $("logs").scrollTop = $("logs").scrollHeight;
   const pages = Math.max(1, Math.ceil(state.total / +$("pageSize").value));
   $("pageinfo").textContent = `第 ${state.page} / ${pages} 页，共 ${state.total} 行`;
@@ -457,6 +490,7 @@ async function doSearch() {
   if (fx.skel) $("logs").innerHTML = '<div class="skel"></div>'.repeat(8);
   try {
     const r = await invoke("logs/search", { file: state.file, keyword: $("keyword").value,
+      regex: $("regexCk").checked, context: +$("context").value,
       level: $("level").value, startTime: normTime($("start").value), endTime: normTime($("end").value),
       page: state.page, pageSize: +$("pageSize").value, sort: $("sort").value });
     state.total = r.total; render(r.lines);
@@ -513,8 +547,8 @@ async function loadTheme() {
   applyTheme("dbx"); // 默认 DBX 原生；老存量 auto/light/dark 照常兼容
 }
 // 特效开关：flow 流光 / dist 分布条 / skel 骨架屏 / keys 快捷键提示；存 storage 持久化
-const FX_KEYS = ["flow", "dist", "skel", "keys"];
-let fx = { flow: true, dist: true, skel: true, keys: true };
+const FX_KEYS = ["flow", "dist", "skel", "keys", "struct"];
+let fx = { flow: true, dist: true, skel: true, keys: true, struct: true };
 function applyFx() {
   for (const k of FX_KEYS) {
     if (fx[k]) document.body.removeAttribute("data-fx-" + k);
@@ -604,7 +638,8 @@ setInterval(() => {
 async function saveCond() {
   try { if (window.dbxPlugin.capabilities.storage)
     await window.dbxPlugin.storage.set("cond", { keyword: $("keyword").value, level: $("level").value,
-      pageSize: $("pageSize").value, sort: $("sort").value, dir: state.dir, file: state.file });
+      pageSize: $("pageSize").value, sort: $("sort").value, dir: state.dir, file: state.file,
+      regex: $("regexCk").checked, context: $("context").value });
   } catch {} // 存储失败不阻塞主流程
 }
 async function loadCond() {
@@ -612,6 +647,7 @@ async function loadCond() {
     const c = await window.dbxPlugin.storage.get("cond");
     if (c) { $("keyword").value = c.keyword||""; $("level").value = c.level||"ALL";
       $("pageSize").value = c.pageSize||"100"; $("sort").value = c.sort||"desc";
+      $("regexCk").checked = !!c.regex; $("context").value = c.context||"0";
       if (c.dir) state.dir = c.dir; state.resumeFile = c.file||null; }
   } } catch {}
 }
@@ -626,6 +662,7 @@ async function toggleTail() {
   }
   if (!state.file) { $("info").textContent = "请先选择日志文件"; return; }
   const r = await invoke("logs/tail", { file: state.file, keyword: $("keyword").value,
+    regex: $("regexCk").checked,
     level: $("level").value, lastN: 200 }, { timeoutMs: 15000 });
   state.streamId = r.streamId; state.tailing = true;
   $("tail").textContent = "⏹ 停止监控";
@@ -639,6 +676,7 @@ async function doDownload() {
     const chunks = []; let offset = 0;
     for (let i = 0; i < 1000; i++) {
       const r = await invoke("logs/downloadChunk", { file: state.file, keyword: $("keyword").value,
+        regex: $("regexCk").checked,
         level: $("level").value, offset, length: 2000 }, { timeoutMs: 60000 });
       chunks.push(r.lines.join("\n")); offset = r.nextOffset;
       $("info").textContent = `下载中…已拉取 ${offset} 行`;
