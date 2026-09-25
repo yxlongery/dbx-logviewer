@@ -13,7 +13,7 @@
   h2 { margin: 0 0 12px; font-size: 17px; }
   #files { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
   .file { border: 1px solid var(--color-border, #e5e5ef); border-radius: 12px; padding: 12px 14px;
-    cursor: pointer; background: var(--color-background, #fafaff); }
+    cursor: pointer; background: var(--color-background, #fafaff); position: relative; }
   .file b { display: block; font-size: 14px; word-break: break-all; }
   .file span { font-size: 12px; opacity: .65; }
   .file.active { outline: 2px solid var(--color-primary, #6d5dfc); background: #efedff; }
@@ -40,10 +40,20 @@
   #logs .err { color: #ff8f8f; } #logs .warn { color: #ffd479; }
   #pager { display: flex; gap: 10px; align-items: center; margin-top: 10px; font-size: 13px; }
   .hint { font-size: 12.5px; opacity: .7; margin-top: 8px; }
+  /* 链接表单与删除按钮：复用现有圆角/字号，不引入新组件 */
+  .linkform { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .linkform input { flex: 1; min-width: 160px; }
+  .linkform button { padding: 9px 14px; }
+  .file .del { position: absolute; top: 4px; right: 10px; cursor: pointer;
+    font-size: 16px; opacity: .45; padding: 2px 6px; }
+  .file .del:hover { opacity: 1; color: #e03434; }
+  .file .tgt { display: block; font-size: 11px; opacity: .55; word-break: break-all; }
 </style>
 </head>
 <body>
-<div class="card"><h2>📁 选择日志文件</h2><div id="files"><span class="hint">连接后自动列出…</span></div></div>
+<div class="card"><h2>📁 选择日志文件</h2>
+<div class="linkform"><input id="linkName" placeholder="链接名，如 app-link.log" /><input id="linkTarget" placeholder="目标绝对路径，如 /opt/app/app.log" /><button id="link">＋ 链接文件</button><button id="refresh" class="ghost">↻ 刷新</button></div>
+<div id="files"><span class="hint">连接后自动列出…</span></div></div>
 <div class="card"><h2>🔍 搜索条件</h2>
   <div class="grid">
     <div><label>关键字</label><input id="keyword" placeholder="输入搜索关键字" /></div>
@@ -101,12 +111,39 @@ async function loadFiles() {
   const { entries } = await invoke("logs/list", {});
   state.files = entries;
   $("files").innerHTML = entries.map(f =>
-    `<div class="file" data-n="${esc(f.name)}"><b>${esc(f.name)}</b><span>${fmtSize(f.size)}　${fmtTime(f.modified_at)}</span></div>`).join("")
+    `<div class="file" data-n="${esc(f.name)}"><span class="del" data-n="${esc(f.name)}" data-link="${f.target ? 1 : 0}" title="删除">×</span><b>${f.target ? "🔗 " : ""}${esc(f.name)}</b><span>${fmtSize(f.size)}　${fmtTime(f.modified_at)}</span>${f.target ? `<span class="tgt">${esc(f.target)}</span>` : ""}</div>`).join("")
     || '<span class="hint">目录下没有 .log / .out 文件</span>';
   document.querySelectorAll(".file").forEach(el => el.onclick = () => {
     document.querySelectorAll(".file").forEach(x => x.classList.remove("active"));
     el.classList.add("active"); state.file = el.dataset.n; state.page = 1; doSearch();
   });
+  // 删除按钮冒泡会触发选中，先 stopPropagation 再按类型二次确认
+  document.querySelectorAll(".file .del").forEach(el => el.onclick = e => {
+    e.stopPropagation(); doDelete(el.dataset.n, el.dataset.link === "1");
+  });
+}
+// 建链：链接名走裸文件名约束，目标走绝对路径校验，失败透出后端 message
+async function doLink() {
+  const name = $("linkName").value.trim(), target = $("linkTarget").value.trim();
+  if (!name || !target) { $("info").textContent = "请填写链接名和目标绝对路径"; return; }
+  try {
+    await invoke("logs/link", { file: name, target });
+    $("linkName").value = ""; $("linkTarget").value = "";
+    $("info").textContent = "已创建链接";
+    await loadFiles();
+  } catch (e) { $("info").textContent = "创建链接失败：" + e.message; }
+}
+// 删除：链接只删入口（目标保留），普通文件真删；删当前文件先停 tail 并清空视图
+async function doDelete(name, isLink) {
+  const msg = isLink ? `只删链接入口（目标保留），确认删除 ${name}？` : `真删文件、不可恢复，确认删除 ${name}？`;
+  if (!confirm(msg)) return;
+  try {
+    if (state.tailing && state.file === name) await toggleTail().catch(()=>{});
+    await invoke("logs/delete", { file: name });
+    if (state.file === name) { state.file = null; $("logs").innerHTML = ""; $("loghead").textContent = "未选择文件"; }
+    $("info").textContent = isLink ? "已取消链接" : "已删除文件";
+    await loadFiles();
+  } catch (e) { $("info").textContent = "删除失败：" + e.message; }
 }
 async function doSearch() {
   if (!state.file) { $("info").textContent = "请先选择日志文件"; return; }
@@ -187,6 +224,8 @@ function onBackendEvent(e) {
 }
 window.addEventListener("DOMContentLoaded", async () => {
   $("search").onclick = () => { state.page = 1; doSearch().catch(e => $("info").textContent = "搜索失败：" + e.message); };
+  $("link").onclick = () => doLink().catch(e => $("info").textContent = "创建链接失败：" + e.message);
+  $("refresh").onclick = () => loadFiles().catch(e => $("info").textContent = "刷新失败：" + e.message);
   $("prev").onclick = () => { if (state.page > 1) { state.page--; doSearch().catch(e => $("info").textContent = e.message); } };
   $("next").onclick = () => { state.page++; doSearch().catch(e => { state.page--; $("info").textContent = e.message; }); };
   $("tail").onclick = () => toggleTail().catch(e => $("info").textContent = "实时监控失败：" + e.message);
