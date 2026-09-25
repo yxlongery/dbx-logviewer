@@ -64,39 +64,6 @@
 - 实时监控初始 200 行；下载分块 2000 行/轮
 - 隐藏只影响界面展示，不删除任何文件
 
-## 🧩 目录结构
-
-```text
-manifest.json                  插件身份、连接表单、权限与工作台声明
-backend/src/main.rs            Rust Sidecar：连接管理 ＋ 日志接口
-ui/index.html                  单文件前端，无构建，开箱即用
-assets/plugin.svg              插件图标
-docs/screenshot.png            工作台截图
-.github/workflows/             Release 自动打 5 平台包
-```
-
-日志接口：`logs/browse`（目录浏览）· `logs/search`（搜索）· `logs/tail` / `logs/stop`（实时启停）· `logs/downloadChunk`（分块下载）。
-
-## 🛠️ 本地开发
-
-```bash
-# 后端构建/测试（SDK 不在 crates.io，用 CLI 自带目录 patch，勿改 Cargo.toml）
-cargo build --config 'patch.crates-io.dbx-plugin-sdk.path="<CLI自带sdk-root>/plugins/sdk/rust/dbx-plugin-sdk"'
-cargo test --config 'patch.crates-io.dbx-plugin-sdk.path="<CLI自带sdk-root>/plugins/sdk/rust/dbx-plugin-sdk"'
-
-# 前端联调（只绑回环，开发机浏览器打开）
-dbx-plugin dev --path . --port 5190
-
-# 打本地验证包（当前平台，Alpine 下为 musl 版）
-dbx-plugin package .
-```
-
-生产二进制在 NAS 上 `rust:1-bookworm` 容器编 gnu release 版后重组 `.dbxp`。
-
-## 📦 发版
-
-打 Tag → GitHub Release（published 触发 workflow 打 5 平台包）→ 向 `t8y2/dbx-store` 提候选 PR（首发 [#164](https://github.com/t8y2/dbx-store/pull/164)）。版本号在 `manifest.json` 与 `backend/Cargo.toml` 手动同步保持一致。
-
 ## 📄 许可证
 
 [Apache-2.0](LICENSE)。
@@ -109,5 +76,4 @@ dbx-plugin package .
 
 - Install from the DBX store (or a `.dbxp` in [Releases](https://github.com/yxlongery/dbx-logviewer/releases)), create a connection with comma-separated log roots (e.g. `/app/data,/logs`; mount scattered logs as independent top-level volumes like `/logs/autofeedemby:ro`, never nested under `/app/data`), then open the workbench from that connection.
 - Limits: lists `.log` / `.out` only; ≤ 500 rows/page (default 100); at most 20000 matched rows per search (truncated with notice); tail starts from the last 200 lines.
-- Layout: Rust sidecar (`backend/src/main.rs`) + single-file frontend (`ui/index.html`, no build). Build with `dbx-plugin package .`; releases ship 5-platform binaries via the official reusable workflow.
 - License: [Apache-2.0](LICENSE).
