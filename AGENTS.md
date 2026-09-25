@@ -24,7 +24,7 @@ DBX 日志查看器插件：Rust Sidecar + 单文件前端，在服务器上看 
 - 打包：`dbx-plugin package .`（当前平台 target；Alpine 下产 musl 版，仅本地验证用）
 - 前端联调：`dbx-plugin dev --path . --port 5190`（只绑回环，跨容器连不上是预期限制，用 curl + diagnostics 验证）
 - 生产二进制：NAS 上 `rust:1-bookworm` 容器编 gnu release，产物重组 `.dbxp`（细节见 LRN-20260925-003）
-- dev 预览包（每次功能完成必走）：本容器 python3 zipfile 从工作区重组 `.dbxp`（`manifest.version` 加 `-dev` 后缀，如 `0.1.5-dev`，同周期覆盖安装不递增；包内 `executable` 改写成 `bin/linux-x64/...` 形态），scp 到 Windows 手动安装验证；验证通过才打 tag 发版
+- dev 预览包（每次功能完成必走）：本容器 python3 zipfile 从工作区重组 `.dbxp`（版本号与源码一致，覆盖安装；包内 `executable` 改写成 `bin/linux-x64/...` 形态），scp 到 Windows 手动安装验证；验证通过才打 tag 发版
 
 ## 代码规范
 
