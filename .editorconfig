@@ -1,0 +1,13 @@
+root = true
+
+[*.rs]
+end_of_line = lf
+insert_final_newline = true
+charset = utf-8
+trim_trailing_whitespace = true
+
+[*.{json,md,yml,toml,html,svg}]
+end_of_line = lf
+insert_final_newline = true
+charset = utf-8
+trim_trailing_whitespace = true

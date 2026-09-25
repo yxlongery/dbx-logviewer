@@ -1,0 +1,4 @@
+*.md eol=lf
+*.json eol=lf
+*.yml eol=lf
+*.toml eol=lf
