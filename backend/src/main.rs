@@ -24,10 +24,8 @@ struct Plugin {
     tails: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
-// 允许的日志扩展名：对标截图里的 *.log 与 nohup.out
+// 允许的日志扩展名：只展示 *.log 与 nohup.out
 const ALLOWED_EXTS: [&str; 2] = ["log", "out"];
-// 链接目标禁区：即使 .log 后缀也不允许指向这些区域
-const FORBIDDEN_TARGET_PREFIXES: [&str; 4] = ["/etc", "/proc", "/sys", "/dev"];
 // 单次 search 最多返回行数：防 8MB JSON 上限，也防大文件全量进内存
 const MAX_RETURN_LINES: usize = 20000;
 // 单页上限：截图默认 100，前端可调
@@ -47,14 +45,11 @@ impl PluginHandler for Plugin {
             "connection/test" => self.test(&params),
             "connection/connect" => self.connect(&params),
             "connection/disconnect" => self.disconnect(&params),
-            "logs/list" => self.list(&params),
+            "logs/browse" => self.browse(&params),
             "logs/search" => self.search(&params),
             "logs/tail" => self.tail(&params, emitter),
             "logs/stop" => self.stop(&params),
             "logs/downloadChunk" => self.download_chunk(&params),
-            // 链接管理：在目录下建软链 / 删文件（链接只删链）
-            "logs/link" => self.link(&params),
-            "logs/delete" => self.delete(&params),
             "dbx-logviewer/ping" => Ok(json!({
                 "ok": true,
                 "plugin": "io.github.yxlonger.logviewer",
@@ -113,40 +108,60 @@ impl Plugin {
         Ok(json!({ "success": true }))
     }
 
-    // logs/list：列目录下 .log/.out，返回名/大小/修改时间，按名排序
-    fn list(&self, params: &Value) -> Result<Value, PluginError> {
+    // logs/browse：列相对目录下一层（子目录 + .log/.out 文件），点选下钻代替手输路径
+    fn browse(&self, params: &Value) -> Result<Value, PluginError> {
         let session = self.session(params)?;
+        let dir_rel = params.get("dir").and_then(Value::as_str).unwrap_or("").trim().to_string();
+        // 空串为根；非空走同一防穿越约束（.. / 绝对一律拒绝，拼接后 canonicalize 校验仍在会话目录内）
+        let dir_abs = if dir_rel.is_empty() {
+            std::path::Path::new(&session.log_dir).canonicalize()
+                .map_err(|e| PluginError::new(-32000, format!("无法读取目录 {}：{e}", session.log_dir)))?
+                .to_string_lossy().to_string()
+        } else {
+            safe_join(&session.log_dir, &dir_rel)?
+        };
+        if !std::fs::metadata(&dir_abs).map(|m| m.is_dir()).unwrap_or(false) {
+            return Err(PluginError::new(-32602, "不是目录"));
+        }
+        let mut dirs = Vec::new();
         let mut entries = Vec::new();
-        let dir = std::fs::read_dir(&session.log_dir)
-            .map_err(|e| PluginError::new(-32000, format!("无法读取目录 {}：{e}", session.log_dir)))?;
-        for entry in dir.flatten() {
+        let rd = std::fs::read_dir(&dir_abs)
+            .map_err(|e| PluginError::new(-32000, format!("无法读取目录 {dir_rel}：{e}")))?;
+        for entry in rd.flatten() {
             let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue; // 隐藏文件/目录不展示
+            }
+            if path.is_dir() {
+                dirs.push(json!({ "name": name }));
+                continue;
+            }
             if !path.is_file() {
                 continue;
             }
-            let ext_ok = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|e| ALLOWED_EXTS.contains(&e.to_ascii_lowercase().as_str()))
-                .unwrap_or(false);
+            let ext_ok = path.extension().and_then(|e| e.to_str())
+                .map(|e| ALLOWED_EXTS.contains(&e.to_ascii_lowercase().as_str())).unwrap_or(false);
             if !ext_ok {
                 continue;
             }
             let meta = entry.metadata().map_err(|e| PluginError::new(-32000, format!("读取文件元信息失败：{e}")))?;
             // 链接目标：普通文件为 null，软链返回目标绝对路径（文本节点展示用）
             let link_target = std::fs::read_link(&path).ok().map(|p| p.to_string_lossy().to_string());
+            // 相对路径透给前端：search/tail/download 直接用它，不再拼
+            let rel = if dir_rel.is_empty() { name } else { format!("{dir_rel}/{name}") };
             entries.push(json!({
-                "name": entry.file_name().to_string_lossy(),
+                "name": rel,
                 "size": meta.len(),
                 "modified_at": meta.modified().ok()
                     .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0),
+                    .map(|d| d.as_secs()).unwrap_or(0),
                 "target": link_target,
             }));
         }
+        dirs.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
         entries.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
-        Ok(json!({ "entries": entries }))
+        Ok(json!({ "dir": dir_rel, "dirs": dirs, "entries": entries }))
     }
 
     // logs/search：逐行流读 + 关键字模糊 + 级别 + 时间范围 + 排序 + 分页
@@ -286,65 +301,6 @@ impl Plugin {
         Ok(json!({ "lines": lines, "nextOffset": offset + lines.len(), "eof": eof }))
     }
 
-    // logs/link：在会话目录下建软链指向别处真实日志，卡片仍是直接子文件
-    fn link(&self, params: &Value) -> Result<Value, PluginError> {
-        let session = self.session(params)?;
-        let file = params.get("file").and_then(Value::as_str).ok_or_else(|| PluginError::new(-32602, "Missing file"))?;
-        let target = params.get("target").and_then(Value::as_str).ok_or_else(|| PluginError::new(-32602, "Missing target"))?;
-        // 链接名与普通文件同一约束：裸文件名 + .log/.out
-        validate_link_name(file)?;
-        let target_path = validate_link_target(target)?;
-        let link_path = format!("{}/{}", session.log_dir.trim_end_matches('/'), file);
-        // 已存在不静默覆盖，前端透出提示
-        if std::fs::symlink_metadata(&link_path).is_ok() {
-            return Err(PluginError::new(-32000, format!("文件已存在：{file}")));
-        }
-        // 跨平台建链：unix 用 symlink，windows 用 symlink_file（目标必为文件）
-        #[cfg(unix)]
-        let r = std::os::unix::fs::symlink(&target_path, &link_path);
-        #[cfg(windows)]
-        let r = std::os::windows::fs::symlink_file(&target_path, &link_path);
-        r.map_err(|e| PluginError::new(-32000, format!("创建链接失败：{e}")))?;
-        Ok(json!({ "success": true }))
-    }
-
-    // logs/delete：链接只删链（目标保留），普通文件真删；删后停掉该文件的 tail 流
-    fn delete(&self, params: &Value) -> Result<Value, PluginError> {
-        let session = self.session(params)?;
-        let file = params.get("file").and_then(Value::as_str).ok_or_else(|| PluginError::new(-32602, "Missing file"))?;
-        let path = safe_join(&session.log_dir, file)?;
-        let meta = std::fs::symlink_metadata(&path)
-            .map_err(|e| PluginError::new(-32000, format!("文件不存在 {file}：{e}")))?;
-        let was_link = meta.file_type().is_symlink();
-        std::fs::remove_file(&path).map_err(|e| PluginError::new(-32000, format!("删除失败 {file}：{e}")))?;
-        self.stop_tails_for_file(params, file);
-        Ok(json!({ "success": true, "wasLink": was_link }))
-    }
-
-    // 停掉某个文件的所有 tail 流：streamId 形如 "<conn>:<file>:<seq>"，中段精确匹配
-    fn stop_tails_for_file(&self, params: &Value, file: &str) {
-        let conn = params.get("connectionId").and_then(Value::as_str).unwrap_or("");
-        // 善后动作：锁失败也不阻塞删除主流程
-        if let Ok(mut tails) = self.tails.lock() {
-            let stale: Vec<String> = tails
-                .keys()
-                .filter(|k| {
-                    if conn.is_empty() {
-                        k.split(':').nth(1).map(|f| f == file).unwrap_or(false)
-                    } else {
-                        k.starts_with(&format!("{conn}:{file}:"))
-                    }
-                })
-                .cloned()
-                .collect();
-            for k in stale {
-                if let Some(flag) = tails.remove(&k) {
-                    flag.store(true, Ordering::Relaxed);
-                }
-            }
-        }
-    }
-
     fn session(&self, params: &Value) -> Result<Session, PluginError> {
         let id = params.get("connectionId").and_then(Value::as_str).ok_or_else(|| PluginError::new(-32602, "Missing connectionId"))?;
         self.sessions
@@ -390,66 +346,19 @@ fn count_log_files(dir: &str) -> Result<usize, PluginError> {
     Ok(n)
 }
 
-// 路径穿越防护：file 必须是裸文件名，拼接后仍在会话目录内
+// 路径约束：file 为相对路径（允许子目录，如 autofeedemby/20260925.log），禁绝对/..；拼接后 canonicalize 校验仍在会话目录内
 fn safe_join(dir: &str, file: &str) -> Result<String, PluginError> {
-    if file.contains('/') || file.contains('\\') || file.contains("..") {
+    if file.trim().is_empty() || file.starts_with('/') || file.contains('\\') || file.contains("..") {
         return Err(PluginError::new(-32602, "非法文件名"));
     }
-    Ok(format!("{}/{}", dir.trim_end_matches('/'), file))
-}
-
-// 链接名校验：与 safe_join 同一防穿越约束，另加扩展名与字符集（与 list 可见范围对齐）
-fn validate_link_name(file: &str) -> Result<(), PluginError> {
-    if file.contains('/') || file.contains('\\') || file.contains("..") {
+    let base = std::path::Path::new(dir);
+    let canon_base = base.canonicalize().map_err(|e| PluginError::new(-32000, format!("无法读取目录 {dir}：{e}")))?;
+    let joined = base.join(file);
+    let canon = joined.canonicalize().map_err(|e| PluginError::new(-32000, format!("路径不存在 {file}：{e}")))?;
+    if !canon.starts_with(&canon_base) {
         return Err(PluginError::new(-32602, "非法文件名"));
     }
-    let ok_ext = file
-        .rsplit('.')
-        .next()
-        .map(|e| ALLOWED_EXTS.contains(&e.to_ascii_lowercase().as_str()))
-        .unwrap_or(false);
-    if !ok_ext {
-        return Err(PluginError::new(-32602, "只允许 .log/.out 文件"));
-    }
-    if !file.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-') {
-        return Err(PluginError::new(-32602, "文件名只允许字母数字._-"));
-    }
-    Ok(())
-}
-
-// 链接目标校验：绝对路径 + 父目录规范化防 ".." 绕禁区 + 指向真实可读的 .log/.out 文件
-fn validate_link_target(target: &str) -> Result<String, PluginError> {
-    let t = target.trim();
-    if !t.starts_with('/') {
-        return Err(PluginError::new(-32602, "目标必须是绝对路径"));
-    }
-    let parent = std::path::Path::new(t).parent().ok_or_else(|| PluginError::new(-32602, "非法目标路径"))?;
-    let canon_parent = parent.canonicalize().map_err(|e| PluginError::new(-32000, format!("目标目录不可访问：{e}")))?;
-    let name = std::path::Path::new(t)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| PluginError::new(-32602, "非法目标路径"))?;
-    let canon = canon_parent.join(name);
-    let canon_str = canon.to_string_lossy().to_string();
-    for p in FORBIDDEN_TARGET_PREFIXES {
-        if canon_str == p || canon_str.starts_with(&format!("{p}/")) {
-            return Err(PluginError::new(-32602, "目标路径不允许"));
-        }
-    }
-    // 跟随末级链接：目标本身是链也接受，只要求最终是文件
-    let meta = std::fs::metadata(&canon).map_err(|e| PluginError::new(-32000, format!("目标文件不可读：{e}")))?;
-    if !meta.is_file() {
-        return Err(PluginError::new(-32602, "目标必须是文件"));
-    }
-    let ok_ext = canon
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| ALLOWED_EXTS.contains(&e.to_ascii_lowercase().as_str()))
-        .unwrap_or(false);
-    if !ok_ext {
-        return Err(PluginError::new(-32602, "目标只允许 .log/.out 文件"));
-    }
-    Ok(canon_str)
+    Ok(canon.to_string_lossy().to_string())
 }
 
 fn now_millis() -> u128 {
@@ -632,9 +541,52 @@ mod tests {
 
     #[test]
     fn safe_join_blocks_traversal() {
-        assert!(safe_join("/var/log/aiban", "aiban-file.log").is_ok());
-        assert!(safe_join("/var/log/aiban", "../etc/passwd").is_err());
-        assert!(safe_join("/var/log/aiban", "sub/dir.log").is_err());
+        assert!(safe_join("/var/log/aiban", "../etc/passwd").is_err()); // 穿越
+        assert!(safe_join("/var/log/aiban", "/etc/passwd").is_err()); // 绝对路径
+        assert!(safe_join("/var/log/aiban", "sub\\dir.log").is_err()); // 反斜杠
+        assert!(safe_join("/var/log/aiban", "").is_err()); // 空串
+    }
+
+    // 子路径放行是目录浏览的前提：真实建目录验证 canonicalize 链路
+    #[test]
+    fn safe_join_allows_subdir_inside_base() {
+        let base = std::env::temp_dir().join("dbx-logviewer-safejoin");
+        let sub = base.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("a.log"), "x\n").unwrap();
+        let b = base.to_str().unwrap();
+        assert!(safe_join(b, "sub/a.log").is_ok()); // 子路径放行
+        assert!(safe_join(b, "sub").is_ok()); // 子目录同样放行（browse 用）
+        assert!(safe_join(b, "sub/../../evil").is_err()); // 拼接后越界
+        assert!(safe_join(b, "no-such-file.log").is_err()); // 不存在
+        std::fs::remove_dir_all(&base).ok(); // 测试收尾清理临时目录
+    }
+
+    // browse 只列一层：子层与非日志不出，穿越/绝对拒绝
+    #[test]
+    fn browse_lists_one_level() {
+        let base = std::env::temp_dir().join("dbx-logviewer-browse");
+        let logs = base.join("logs");
+        let sub = logs.join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(logs.join("top.log"), "t\n").unwrap();
+        std::fs::write(sub.join("a.log"), "a\n").unwrap();
+        std::fs::write(logs.join("note.txt"), "n\n").unwrap(); // 非日志不列
+        let plugin = Plugin::default();
+        let conn_id = "browse-test-conn";
+        plugin.sessions.lock().unwrap().insert(conn_id.to_string(), Session { log_dir: logs.to_str().unwrap().to_string() });
+        let root = plugin.browse(&serde_json::json!({ "connectionId": conn_id })).expect("根应成功");
+        assert!(root["dirs"].as_array().unwrap().iter().any(|x| x["name"] == "sub"));
+        let names: Vec<String> = root["entries"].as_array().unwrap().iter()
+            .map(|x| x["name"].as_str().unwrap().to_string()).collect();
+        assert!(names.contains(&"top.log".to_string()));
+        assert!(!names.iter().any(|n| n.contains("note.txt") || n.contains("a.log"))); // 子层与非日志不出
+        let s = plugin.browse(&serde_json::json!({ "connectionId": conn_id, "dir": "sub" })).expect("子目录应成功");
+        assert_eq!(s["entries"].as_array().unwrap().len(), 1);
+        assert_eq!(s["entries"][0]["name"], "sub/a.log");
+        assert!(plugin.browse(&serde_json::json!({ "connectionId": conn_id, "dir": "../" })).is_err()); // 穿越
+        assert!(plugin.browse(&serde_json::json!({ "connectionId": conn_id, "dir": "/etc" })).is_err()); // 绝对
+        std::fs::remove_dir_all(&base).ok(); // 测试收尾清理临时目录
     }
 
     // 移除 SSH 选项后的兼容：旧连接残留 mode=ssh 不再被拒绝，按本地目录处理
@@ -652,62 +604,5 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok(); // 测试收尾清理临时目录
     }
 
-    #[test]
-    fn link_name_validation() {
-        assert!(validate_link_name("app.log").is_ok());
-        assert!(validate_link_name("aiban-file_1.out").is_ok());
-        assert!(validate_link_name("../etc/passwd").is_err()); // 穿越
-        assert!(validate_link_name("sub/dir.log").is_err()); // 子目录
-        assert!(validate_link_name("app.txt").is_err()); // 扩展名
-        assert!(validate_link_name("app log.log").is_err()); // 空格
-    }
-
-    #[test]
-    fn link_target_rejects_bad_paths() {
-        assert!(validate_link_target("var/log/app.log").is_err()); // 非绝对
-        assert!(validate_link_target("/etc/x.log").is_err()); // 敏感目录
-        assert!(validate_link_target("/proc/1/x.log").is_err()); // 敏感目录
-        assert!(validate_link_target("/nonexistent-dir-xyz-123/app.log").is_err()); // 父目录不存在
-    }
-
-    // 建链→list 见 target→经链搜索→删链留目标→普通文件真删，全链路回放
-    #[test]
-    fn link_and_delete_roundtrip() {
-        let base = std::env::temp_dir().join("dbx-logviewer-link-test");
-        let dir = base.join("logs");
-        let ext = base.join("ext");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::create_dir_all(&ext).unwrap();
-        std::fs::write(ext.join("real.log"), "hello\n").unwrap();
-        let plugin = Plugin::default();
-        let conn_id = "link-test-conn";
-        plugin
-            .sessions
-            .lock()
-            .unwrap()
-            .insert(conn_id.to_string(), Session { log_dir: dir.to_str().unwrap().to_string() });
-        let r = plugin
-            .link(&serde_json::json!({
-                "connectionId": conn_id, "file": "ext-link.log",
-                "target": ext.join("real.log").to_str().unwrap()
-            }))
-            .expect("建链应成功");
-        assert_eq!(r["success"], true);
-        let l = plugin.list(&serde_json::json!({ "connectionId": conn_id })).expect("list 应成功");
-        let e = l["entries"].as_array().unwrap().iter().find(|x| x["name"] == "ext-link.log").expect("应有链接条目");
-        assert!(e["target"].as_str().map(|t| t.ends_with("real.log")).unwrap_or(false));
-        let s = plugin
-            .search(&serde_json::json!({ "connectionId": conn_id, "file": "ext-link.log", "page": 1, "pageSize": 100 }))
-            .expect("经链接搜索应成功");
-        assert_eq!(s["total"], 1);
-        let d = plugin.delete(&serde_json::json!({ "connectionId": conn_id, "file": "ext-link.log" })).expect("删链应成功");
-        assert_eq!(d["wasLink"], true);
-        assert!(ext.join("real.log").exists(), "目标文件必须保留");
-        assert!(!dir.join("ext-link.log").exists(), "链接入口应被删掉");
-        std::fs::write(dir.join("plain.log"), "x\n").unwrap();
-        let d2 = plugin.delete(&serde_json::json!({ "connectionId": conn_id, "file": "plain.log" })).expect("真删应成功");
-        assert_eq!(d2["wasLink"], false);
-        assert!(!dir.join("plain.log").exists());
-        std::fs::remove_dir_all(&base).ok(); // 测试收尾清理临时目录
-    }
+    // 建链相关逻辑已下线（目录浏览代替手输路径，删除改为界面隐藏）：旧测试整组移除
 }

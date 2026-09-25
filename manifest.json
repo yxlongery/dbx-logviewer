@@ -42,7 +42,7 @@
           "key": "log_dir",
           "label": "Log directory",
           "type": "text",
-          "placeholder": "/var/log/aiban/",
+          "placeholder": "/app/data",
           "binding": "config",
           "required": true
         }

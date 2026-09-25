@@ -40,20 +40,33 @@
   #logs .err { color: #ff8f8f; } #logs .warn { color: #ffd479; }
   #pager { display: flex; gap: 10px; align-items: center; margin-top: 10px; font-size: 13px; }
   .hint { font-size: 12.5px; opacity: .7; margin-top: 8px; }
-  /* 链接表单与删除按钮：复用现有圆角/字号，不引入新组件 */
-  .linkform { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-  .linkform input { flex: 1; min-width: 160px; }
-  .linkform button { padding: 9px 14px; }
-  .file .del { position: absolute; top: 4px; right: 10px; cursor: pointer;
-    font-size: 16px; opacity: .45; padding: 2px 6px; }
-  .file .del:hover { opacity: 1; color: #e03434; }
+  /* 目录浏览与隐藏：复用现有圆角/字号，不引入新组件 */
+  .toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .toolbar input { flex: 1; min-width: 160px; }
+  .toolbar select { flex: 0 1 160px; }
+  .toolbar button { padding: 9px 14px; }
+  #crumb { font-size: 13px; margin-bottom: 8px; }
+  #crumb .crumb { cursor: pointer; font-weight: 650; }
+  #crumb .crumb:hover { text-decoration: underline; }
+  #dirs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  #dirs .dir { cursor: pointer; font-size: 13px; border: 1px solid var(--color-border, #e5e5ef);
+    border-radius: 10px; padding: 6px 12px; background: var(--color-background, #fafaff); }
+  #dirs .dir:hover { outline: 2px solid var(--color-primary, #6d5dfc); }
+  .file .hide { position: absolute; top: 6px; right: 10px; cursor: pointer;
+    font-size: 12px; opacity: .45; padding: 2px 6px; }
+  .file .hide:hover { opacity: 1; color: #e03434; }
   .file .tgt { display: block; font-size: 11px; opacity: .55; word-break: break-all; }
+  #hiddenbar { font-size: 12.5px; opacity: .8; margin-top: 8px; display: flex; gap: 10px; align-items: center; }
+  #hiddenbar button { padding: 4px 12px; font-size: 12.5px; }
 </style>
 </head>
 <body>
 <div class="card"><h2>📁 选择日志文件</h2>
-<div class="linkform"><input id="linkName" placeholder="链接名，如 app-link.log" /><input id="linkTarget" placeholder="目标绝对路径，如 /opt/app/app.log" /><button id="link">＋ 链接文件</button><button id="refresh" class="ghost">↻ 刷新</button></div>
-<div id="files"><span class="hint">连接后自动列出…</span></div></div>
+<div id="crumb"></div>
+<div class="toolbar"><input id="fileFilter" placeholder="过滤文件名，如 app" /><select id="fileSort"><option value="time">按修改时间</option><option value="name">按名称</option><option value="size">按大小</option></select><button id="refresh" class="ghost">↻ 刷新</button></div>
+<div id="dirs"></div>
+<div id="files"><span class="hint">连接后自动列出…</span></div>
+<div id="hiddenbar"></div></div>
 <div class="card"><h2>🔍 搜索条件</h2>
   <div class="grid">
     <div><label>关键字</label><input id="keyword" placeholder="输入搜索关键字" /></div>
@@ -84,7 +97,7 @@
 </div>
 <script>
 const $ = id => document.querySelector("#" + id);
-const state = { files: [], file: null, page: 1, total: 0, streamId: null, tailing: false, connId: null };
+const state = { dirs: [], files: [], dir: "", file: null, page: 1, total: 0, streamId: null, tailing: false, connId: null, hidden: [], fileFilter: "", fileSort: "time" };
 // HTML 转义：日志原文直接插 innerHTML 会执行标签，先转义再高亮
 const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const fmtSize = n => n > 1048576 ? (n/1048576).toFixed(2)+" MB" : n > 1024 ? (n/1024).toFixed(2)+" KB" : n+" B";
@@ -107,43 +120,82 @@ function render(lines) {
   const pages = Math.max(1, Math.ceil(state.total / +$("pageSize").value));
   $("pageinfo").textContent = `第 ${state.page} / ${pages} 页，共 ${state.total} 行`;
 }
-async function loadFiles() {
-  const { entries } = await invoke("logs/list", {});
-  state.files = entries;
-  $("files").innerHTML = entries.map(f =>
-    `<div class="file" data-n="${esc(f.name)}"><span class="del" data-n="${esc(f.name)}" data-link="${f.target ? 1 : 0}" title="删除">×</span><b>${f.target ? "🔗 " : ""}${esc(f.name)}</b><span>${fmtSize(f.size)}　${fmtTime(f.modified_at)}</span>${f.target ? `<span class="tgt">${esc(f.target)}</span>` : ""}</div>`).join("")
-    || '<span class="hint">目录下没有 .log / .out 文件</span>';
+async function loadBrowse(dir) {
+  if (dir !== undefined) state.dir = dir;
+  const r = await invoke("logs/browse", { dir: state.dir });
+  state.dirs = r.dirs; state.files = r.entries;
+  renderCrumb(); renderDirs(); renderFiles();
+}
+// 面包屑：根 + 各级，可点回退；换目录时清空选中
+function renderCrumb() {
+  const parts = state.dir ? state.dir.split("/") : [];
+  let h = `<span class="crumb" data-d="">根</span>`;
+  let acc = "";
+  parts.forEach(p => { acc = acc ? acc + "/" + p : p; h += ` / <span class="crumb" data-d="${esc(acc)}">${esc(p)}</span>`; });
+  $("crumb").innerHTML = h;
+  document.querySelectorAll(".crumb").forEach(el => el.onclick = () => {
+    state.file = null; loadBrowse(el.dataset.d).catch(e => $("info").textContent = "浏览失败：" + e.message);
+  });
+}
+// 子目录：点进入
+function renderDirs() {
+  $("dirs").innerHTML = state.dirs.map(d =>
+    `<span class="dir" data-d="${esc(state.dir ? state.dir + "/" + d.name : d.name)}">📁 ${esc(d.name)}</span>`).join("");
+  document.querySelectorAll(".dir").forEach(el => el.onclick = () => {
+    state.file = null; loadBrowse(el.dataset.d).catch(e => $("info").textContent = "浏览失败：" + e.message);
+  });
+}
+// 文件卡片：隐藏名单过滤 + 文件名过滤 + 排序；选中态在刷新后保留
+function visibleFiles() {
+  const kw = state.fileFilter.trim();
+  const list = state.files.filter(f => !state.hidden.includes(f.name) && (!kw || f.name.includes(kw)));
+  if (state.fileSort === "name") list.sort((a, b) => a.name < b.name ? -1 : 1);
+  else if (state.fileSort === "size") list.sort((a, b) => b.size - a.size);
+  else list.sort((a, b) => b.modified_at - a.modified_at);
+  return list;
+}
+// 短名：相对路径只取末段展示，全路径放 title 与 tgt 行
+const shortName = rel => rel.split("/").pop();
+function renderFiles() {
+  const list = visibleFiles();
+  $("files").innerHTML = list.map(f =>
+    `<div class="file${state.file === f.name ? " active" : ""}" data-n="${esc(f.name)}"><span class="hide" data-n="${esc(f.name)}" title="仅在界面隐藏，文件保留">隐藏</span><b>${esc(shortName(f.name))}</b><span>${fmtSize(f.size)}　${fmtTime(f.modified_at)}</span><span class="tgt" title="${esc(f.name)}">${esc(f.name)}</span></div>`).join("")
+    || '<span class="hint">本目录下没有匹配的 .log / .out 文件</span>';
   document.querySelectorAll(".file").forEach(el => el.onclick = () => {
     document.querySelectorAll(".file").forEach(x => x.classList.remove("active"));
     el.classList.add("active"); state.file = el.dataset.n; state.page = 1; doSearch();
   });
-  // 删除按钮冒泡会触发选中，先 stopPropagation 再按类型二次确认
-  document.querySelectorAll(".file .del").forEach(el => el.onclick = e => {
-    e.stopPropagation(); doDelete(el.dataset.n, el.dataset.link === "1");
+  document.querySelectorAll(".file .hide").forEach(el => el.onclick = e => {
+    e.stopPropagation(); doHide(el.dataset.n);
   });
+  renderHiddenBar();
 }
-// 建链：链接名走裸文件名约束，目标走绝对路径校验，失败透出后端 message
-async function doLink() {
-  const name = $("linkName").value.trim(), target = $("linkTarget").value.trim();
-  if (!name || !target) { $("info").textContent = "请填写链接名和目标绝对路径"; return; }
-  try {
-    await invoke("logs/link", { file: name, target });
-    $("linkName").value = ""; $("linkTarget").value = "";
-    $("info").textContent = "已创建链接";
-    await loadFiles();
-  } catch (e) { $("info").textContent = "创建链接失败：" + e.message; }
+// 隐藏只藏界面、文件保留：名单按连接存 storage，可恢复
+async function doHide(name) {
+  if (!confirm(`仅在界面隐藏（文件保留，可恢复），确认隐藏 ${name}？`)) return;
+  if (state.tailing && state.file === name) await toggleTail().catch(()=>{});
+  state.hidden.push(name);
+  if (state.file === name) { state.file = null; $("logs").innerHTML = ""; $("loghead").textContent = "未选择文件"; }
+  await saveHidden(); renderFiles();
+  $("info").textContent = "已隐藏（文件保留）";
 }
-// 删除：链接只删入口（目标保留），普通文件真删；删当前文件先停 tail 并清空视图
-async function doDelete(name, isLink) {
-  const msg = isLink ? `只删链接入口（目标保留），确认删除 ${name}？` : `真删文件、不可恢复，确认删除 ${name}？`;
-  if (!confirm(msg)) return;
-  try {
-    if (state.tailing && state.file === name) await toggleTail().catch(()=>{});
-    await invoke("logs/delete", { file: name });
-    if (state.file === name) { state.file = null; $("logs").innerHTML = ""; $("loghead").textContent = "未选择文件"; }
-    $("info").textContent = isLink ? "已取消链接" : "已删除文件";
-    await loadFiles();
-  } catch (e) { $("info").textContent = "删除失败：" + e.message; }
+function renderHiddenBar() {
+  $("hiddenbar").innerHTML = state.hidden.length
+    ? `<span>已隐藏 ${state.hidden.length} 个（文件均保留）</span><button id="unhide" class="ghost">恢复全部</button>`
+    : "";
+  const b = $("unhide");
+  if (b) b.onclick = async () => { state.hidden = []; await saveHidden(); renderFiles(); };
+}
+async function loadHidden() {
+  try { if (window.dbxPlugin.capabilities.storage && state.connId) {
+    const h = await window.dbxPlugin.storage.get("hidden:" + state.connId);
+    if (Array.isArray(h)) state.hidden = h;
+  } } catch {} // 存储失败不阻塞主流程
+}
+async function saveHidden() {
+  try { if (window.dbxPlugin.capabilities.storage && state.connId)
+    await window.dbxPlugin.storage.set("hidden:" + state.connId, state.hidden);
+  } catch {} // 存储失败不阻塞主流程
 }
 async function doSearch() {
   if (!state.file) { $("info").textContent = "请先选择日志文件"; return; }
@@ -158,14 +210,15 @@ async function doSearch() {
 async function saveCond() {
   try { if (window.dbxPlugin.capabilities.storage)
     await window.dbxPlugin.storage.set("cond", { keyword: $("keyword").value, level: $("level").value,
-      pageSize: $("pageSize").value, sort: $("sort").value });
+      pageSize: $("pageSize").value, sort: $("sort").value, dir: state.dir, file: state.file });
   } catch {} // 存储失败不阻塞主流程
 }
 async function loadCond() {
   try { if (window.dbxPlugin.capabilities.storage) {
     const c = await window.dbxPlugin.storage.get("cond");
     if (c) { $("keyword").value = c.keyword||""; $("level").value = c.level||"ALL";
-      $("pageSize").value = c.pageSize||"100"; $("sort").value = c.sort||"desc"; }
+      $("pageSize").value = c.pageSize||"100"; $("sort").value = c.sort||"desc";
+      if (c.dir) state.dir = c.dir; state.resumeFile = c.file||null; }
   } } catch {}
 }
 async function toggleTail() {
@@ -224,8 +277,9 @@ function onBackendEvent(e) {
 }
 window.addEventListener("DOMContentLoaded", async () => {
   $("search").onclick = () => { state.page = 1; doSearch().catch(e => $("info").textContent = "搜索失败：" + e.message); };
-  $("link").onclick = () => doLink().catch(e => $("info").textContent = "创建链接失败：" + e.message);
-  $("refresh").onclick = () => loadFiles().catch(e => $("info").textContent = "刷新失败：" + e.message);
+  $("refresh").onclick = () => loadBrowse().catch(e => $("info").textContent = "刷新失败：" + e.message);
+  $("fileFilter").oninput = e => { state.fileFilter = e.target.value; renderFiles(); };
+  $("fileSort").onchange = e => { state.fileSort = e.target.value; renderFiles(); };
   $("prev").onclick = () => { if (state.page > 1) { state.page--; doSearch().catch(e => $("info").textContent = e.message); } };
   $("next").onclick = () => { state.page++; doSearch().catch(e => { state.page--; $("info").textContent = e.message; }); };
   $("tail").onclick = () => toggleTail().catch(e => $("info").textContent = "实时监控失败：" + e.message);
@@ -237,7 +291,15 @@ window.addEventListener("DOMContentLoaded", async () => {
   try { window.dbxPlugin.onEvent(onBackendEvent); } catch {} // 旧宿主无该 API 则实时推送不可用
   window.addEventListener("dbx-plugin-env", () => {}); // 主题经 CSS 变量自动跟随，无需手动刷新
   await loadCond();
-  await loadFiles().catch(e => $("info").textContent = "加载文件列表失败：" + e.message);
+  await loadHidden();
+  await loadBrowse().catch(e => $("info").textContent = "加载文件列表失败：" + e.message);
+  // 上次选中的文件若仍在当前目录，自动恢复选中并搜索
+  if (state.resumeFile && state.files.some(f => f.name === state.resumeFile) && !state.hidden.includes(state.resumeFile)) {
+    state.file = state.resumeFile; state.page = 1;
+    renderFiles();
+    await doSearch().catch(e => $("info").textContent = "搜索失败：" + e.message);
+  }
+  state.resumeFile = null;
 });
 </script>
 </body>
