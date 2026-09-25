@@ -1,0 +1,146 @@
+{
+  "$schema": "https://raw.githubusercontent.com/t8y2/dbx/plugin-sdk-v1/plugins/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "io.github.yxlonger.logviewer",
+  "name": "Log Viewer",
+  "version": "0.1.0-beta.1",
+  "publisher": "yxlonger",
+  "description": "查看服务器 .log 日志，支持滚动查询与模糊搜索",
+  "icon": "assets/plugin.svg",
+  "engines": {
+    "dbx": ">=0.5.68",
+    "host_api": "1"
+  },
+  "permissions": ["host.storage", "host.events"],
+  "entrypoints": {
+    "backend": {
+      "executable": "bin/dbx-plugin-dbx-logviewer"
+    },
+    "ui": {
+      "root": "ui",
+      "entry": "ui/index.html"
+    }
+  },
+  "contributions": [
+    {
+      "type": "connection-provider",
+      "id": "io.github.yxlonger.logviewer.connection",
+      "label": "Log Viewer connection",
+      "icon": "assets/plugin.svg",
+      "database_type": "dbx-logviewer",
+      "description": "Browse server .log files with search and live tail.",
+      "fields": [
+        {
+          "key": "display_name",
+          "label": "Connection name",
+          "type": "text",
+          "default": "Log Viewer connection",
+          "binding": "name",
+          "required": true
+        },
+        {
+          "key": "mode",
+          "label": "Mode",
+          "type": "radio",
+          "options": [
+            { "label": "Local directory", "value": "local" },
+            { "label": "SSH server", "value": "ssh" }
+          ],
+          "default": "local",
+          "binding": "config",
+          "required": true
+        },
+        {
+          "key": "log_dir",
+          "label": "Log directory",
+          "type": "text",
+          "placeholder": "/var/log/aiban/",
+          "binding": "config",
+          "required": true
+        },
+        {
+          "key": "ssh_host",
+          "label": "SSH host",
+          "type": "text",
+          "binding": "host",
+          "visible_when": { "field": "mode", "one_of": ["ssh"] },
+          "required_when": { "field": "mode", "one_of": ["ssh"] }
+        },
+        {
+          "key": "ssh_port",
+          "label": "SSH port",
+          "type": "number",
+          "default": 22,
+          "binding": "port",
+          "visible_when": { "field": "mode", "one_of": ["ssh"] }
+        },
+        {
+          "key": "ssh_user",
+          "label": "SSH user",
+          "type": "text",
+          "binding": "username",
+          "visible_when": { "field": "mode", "one_of": ["ssh"] },
+          "required_when": { "field": "mode", "one_of": ["ssh"] }
+        },
+        {
+          "key": "ssh_password",
+          "label": "SSH password",
+          "type": "password",
+          "binding": "secret",
+          "visible_when": { "field": "mode", "one_of": ["ssh"] }
+        },
+        {
+          "key": "private_key_path",
+          "label": "Private key path",
+          "type": "text",
+          "binding": "config",
+          "picker": { "kind": "file", "accept": [".pem", ".key"], "content_field": "private_key" },
+          "visible_when": { "field": "mode", "one_of": ["ssh"] }
+        },
+        {
+          "key": "private_key",
+          "label": "Private key content",
+          "type": "textarea",
+          "binding": "secret",
+          "visible_when": { "field": "mode", "one_of": ["ssh"] }
+        }
+      ],
+      "workbench": "io.github.yxlonger.logviewer.workbench",
+      "capabilities": ["test", "connect", "disconnect"]
+    },
+    {
+      "type": "workbench",
+      "id": "io.github.yxlonger.logviewer.workbench",
+      "label": "Log Viewer Workbench",
+      "description": "Sandboxed UI contributed by Log Viewer.",
+      "icon": "assets/plugin.svg"
+    }
+  ],
+  "localizations": {
+    "zh-CN": {
+      "name": "日志查看器",
+      "description": "查看服务器 .log 日志，支持滚动查询与模糊搜索",
+      "contributions": {
+        "io.github.yxlonger.logviewer.connection": {
+          "label": "日志查看器连接",
+          "description": "浏览服务器 .log 文件，支持搜索与实时滚动。",
+          "fields": {
+            "display_name": { "label": "连接名称" },
+            "mode": { "label": "模式" },
+            "log_dir": { "label": "日志目录" },
+            "ssh_host": { "label": "SSH 主机" },
+            "ssh_port": { "label": "SSH 端口" },
+            "ssh_user": { "label": "SSH 用户" },
+            "ssh_password": { "label": "SSH 密码" },
+            "private_key_path": { "label": "私钥路径" },
+            "private_key": { "label": "私钥内容" }
+          }
+        },
+        "io.github.yxlonger.logviewer.workbench": {
+          "label": "日志查看器工作台",
+          "description": "选择日志文件，搜索并实时滚动查看。"
+        }
+      }
+    }
+  }
+}
