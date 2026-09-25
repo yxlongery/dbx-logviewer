@@ -299,8 +299,12 @@ impl Plugin {
         if std::fs::symlink_metadata(&link_path).is_ok() {
             return Err(PluginError::new(-32000, format!("文件已存在：{file}")));
         }
-        std::os::unix::fs::symlink(&target_path, &link_path)
-            .map_err(|e| PluginError::new(-32000, format!("创建链接失败：{e}")))?;
+        // 跨平台建链：unix 用 symlink，windows 用 symlink_file（目标必为文件）
+        #[cfg(unix)]
+        let r = std::os::unix::fs::symlink(&target_path, &link_path);
+        #[cfg(windows)]
+        let r = std::os::windows::fs::symlink_file(&target_path, &link_path);
+        r.map_err(|e| PluginError::new(-32000, format!("创建链接失败：{e}")))?;
         Ok(json!({ "success": true }))
     }
 
