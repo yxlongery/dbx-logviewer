@@ -28,6 +28,8 @@
   button.green { background: #22a06b; }
   button.orange { background: #e8822a; }
   button.ghost { background: var(--color-muted, #eceaf6); color: inherit; }
+  button.sm { padding: 6px 12px; font-size: 13px; border-radius: 10px; }
+  #quickrow { margin-top: 10px; }
   button:disabled { opacity: .5; cursor: wait; }
   #status { font-size: 13px; }
   #status .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #e03434; margin-right: 6px; }
@@ -78,9 +80,16 @@
   </div>
   <div class="grid">
     <div><label>开始时间</label><input id="start" type="datetime-local" /></div>
-    <div><label>结束时间</label><input id="end" type="datetime-local" /></div>
+    <div><label>结束时间（留空=至今）</label><input id="end" type="datetime-local" /></div>
     <div><label>排序方式</label><select id="sort">
       <option value="desc">最新在前</option><option value="asc">最早在前</option></select></div>
+  </div>
+  <div class="row" id="quickrow">
+    <button class="ghost sm" data-min="10">近10分钟</button>
+    <button class="ghost sm" data-min="60">近1小时</button>
+    <button class="ghost sm" data-min="4320">近3天</button>
+    <button class="ghost sm" data-min="10080">近1周</button>
+    <button class="ghost sm" id="clearTime">清空时间</button>
   </div>
   <div class="row">
     <button id="search">🔍 搜索日志</button>
@@ -197,6 +206,14 @@ async function saveHidden() {
     await window.dbxPlugin.storage.set("hidden:" + state.connId, state.hidden);
   } catch {} // 存储失败不阻塞主流程
 }
+// 快捷时间：填 start 为 now-分钟、end 留空（=至今），直接搜；手动改框不互斥
+const pad2 = n => String(n).padStart(2, "0");
+const toLocalInput = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+function setQuick(min) {
+  $("start").value = toLocalInput(new Date(Date.now() - min*60000));
+  $("end").value = "";
+  state.page = 1; doSearch().catch(e => $("info").textContent = "搜索失败：" + e.message);
+}
 async function doSearch() {
   if (!state.file) { $("info").textContent = "请先选择日志文件"; return; }
   const r = await invoke("logs/search", { file: state.file, keyword: $("keyword").value,
@@ -280,6 +297,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("refresh").onclick = () => loadBrowse().catch(e => $("info").textContent = "刷新失败：" + e.message);
   $("fileFilter").oninput = e => { state.fileFilter = e.target.value; renderFiles(); };
   $("fileSort").onchange = e => { state.fileSort = e.target.value; renderFiles(); };
+  document.querySelectorAll("#quickrow [data-min]").forEach(b => b.onclick = () => setQuick(+b.dataset.min));
+  $("clearTime").onclick = () => { $("start").value = ""; $("end").value = ""; };
   $("prev").onclick = () => { if (state.page > 1) { state.page--; doSearch().catch(e => $("info").textContent = e.message); } };
   $("next").onclick = () => { state.page++; doSearch().catch(e => { state.page--; $("info").textContent = e.message; }); };
   $("tail").onclick = () => toggleTail().catch(e => $("info").textContent = "实时监控失败：" + e.message);
