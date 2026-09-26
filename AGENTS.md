@@ -44,3 +44,11 @@ DBX 日志查看器插件：Rust Sidecar + 单文件前端，在服务器上看 
 - 提交格式与收尾流程遵循全局 AGENTS.md 第 9 节（中文 commit message 先审核再提交）
 - 版本手动维护：`manifest.json` 与 `backend/Cargo.toml` 版本号必须一致，`Cargo.lock` 同步更新（CI `--locked` 校验）
 - 发版 = GitHub Release（Tag）：Release published 触发官方 workflow 打 5 平台包 → dbx-store 提候选 PR；Beta 版用 prerelease
+
+## 商店自动更新（2026-09-26 注册，#164 合并后生效）
+
+- 商店侧 `automation/plugin-sources.json` 注册 `yxlongery/dbx-logviewer`（`autoUpdate: true`）；本仓库根 `.dbx-store.json` 为 listing 元数据源（同步器按 tag 取）
+- 发版纪律：试水一律 prerelease（同步器只认正式版）；正式版放缓节奏、攒实质变更；**发版前先更新 `releaseNotes` 与 `source` 中的 tag 再打 tag**，tag 打完不动文件
+- `.dbx-store.json` 禁令：只用白名单 10 字段（多写报错）；`permissions` 不手写（会被 Release identity 覆盖，历史曾致客户端拒绝更新）；出现的 listing 字段即替换商店现值，须与已审值逐字对齐
+- repository 用 `yxlongery`（真实登录名）；`publisher: yxlonger` 已审，不动
+- 机制：自动化只开 candidate PR，不签名不合并；误发正式版也只是多一个 PR（细节见 LRN-20260926-002）

@@ -1,0 +1,16 @@
+{
+  "name": "Log Viewer",
+  "description": "View server .log files with keyword search, live tail and download.",
+  "icon": "assets/plugin.svg",
+  "tags": ["logs", "devops"],
+  "homepage": "https://github.com/yxlongery/dbx-logviewer",
+  "license": "Apache-2.0",
+  "source": "https://github.com/yxlongery/dbx-logviewer/tree/v0.1.6",
+  "releaseNotes": "Hide without confirm dialog; sort/wrap quick toggles in log header; no-wrap uses pre with horizontal scroll.",
+  "localizations": {
+    "zh-CN": {
+      "name": "日志查看器",
+      "description": "查看服务器 .log 日志，支持滚动查询与模糊搜索"
+    }
+  }
+}
