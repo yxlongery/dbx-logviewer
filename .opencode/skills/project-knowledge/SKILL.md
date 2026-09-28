@@ -19,7 +19,7 @@ AGENTS.md 只保留铁律与高频命令，本 skill 收纳「参考型知识」
 
 - `manifest.json`：插件身份、本地目录连接表单、权限（host.storage/host.events）、workbench 声明
 - `backend/src/main.rs`：Rust Sidecar 单文件。7 个 RPC：connection/test/connect/disconnect、logs/list/search/tail+stop/downloadChunk
-- `ui/index.html`：单文件前端，无构建。三段式：文件卡片 → 搜索条件 → 日志区
+- `ui/`：前端三文件（`index.html` + `style.css` + `app.js`，无构建）：文件卡片 → 搜索条件 → 日志区
 - `dist/`：构建输出不提交（gitignore），发版靠 GitHub Release workflow 产物
 - `.dbx-store.json`：无，商店元数据在 PR 里
 

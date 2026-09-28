@@ -28,6 +28,7 @@ DBX 日志查看器插件：Rust Sidecar + 单文件前端，在服务器上看 
 
 - 一键：`scripts/make-test-pkg.sh [linux|win]`（官方同版本底包换新 `ui/` + 重算 `checksums` → 存 `tmp/` → 同步 NAS `/tmp` 与 Windows 桌面 → NAS 断开安装 `ping`）
 - `linux` 包给 NAS docker 的 DBX，`win` 包给 Windows 桌面 DBX；`version` 不动覆盖安装；`tmp/` 已 `gitignore` 不进仓库
+- 安装一律走本机脚本（SSH 版 1.6MB 经反代报 413，不调反代配置）
 - 单独覆盖安装（NAS 本机）：`scripts/repack-test.sh <包>`（有活跃连接会拦 `active connections`，脚本先调断开接口）
 
 ## 生产与发版
@@ -36,11 +37,11 @@ DBX 日志查看器插件：Rust Sidecar + 单文件前端，在服务器上看 
 
 ## 代码规范
 
-- 后端纯 `std` 零新依赖：SSH 这类需新 crate 的能力单独评估，不默默加依赖
+- 后端依赖：`russh` + `russh-sftp` + `tokio`（SSH 远端模式，B1 已评估通过，纯 Rust 无系统依赖，`ring` 后端兼顾 musl/gnu）；其余不加新 crate
 - JSON 单消息 8MB 上限：大文件走分页/分块，勿整包返回
 - Secret（密码/私钥）只走宿主 Secret Store，不进内存日志/context/事件
 - 新增 Rust 方法配 `#[cfg(test)]` 单元测试（纯函数直测：解析/过滤/路径防护）
-- 前端无构建：单文件 `ui/index.html`，Vite 规范不适用；日志原文插 DOM 前必须 HTML 转义
+- 前端无构建：`ui/` 三文件（`index.html` 结构 + `style.css` + `app.js`，相对路径引用，沙箱可加载）；日志原文插 DOM 前必须 HTML 转义
 - **关键信息记到 AGENTS.md 里，不要记到 learnings 条目里**（避免信息分散）
 
 ## 任务收尾自动扫尾（task-wrapup）
