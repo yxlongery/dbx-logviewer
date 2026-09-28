@@ -20,7 +20,7 @@ DBX 日志查看器插件：Rust Sidecar + 单文件前端，在服务器上看 
 
 ## 命令（构建与联调）
 
-- 后端构建/测试：`cargo build/test --config 'patch.crates-io.dbx-plugin-sdk.path="<CLI自带sdk-root>/plugins/sdk/rust/dbx-plugin-sdk"'`（SDK 不在 crates.io，勿改 Cargo.toml 加 path 依赖）
+- 后端构建/测试：`cargo build/test --config 'patch.crates-io.dbx-plugin-sdk.path="<工作区>/tmp/sdk-root"'`（SDK 不在 crates.io，固定缓存在 `tmp/sdk-root`，`gitignore` 不进仓库；CLI 升级后重同步；勿改 Cargo.toml 加 path 依赖）
 - 打包：`dbx-plugin package .`（当前平台 target；Alpine 下产 musl 版，仅本地验证用）
 - 前端联调：`dbx-plugin dev --path . --port 5190`（只绑回环，跨容器连不上是预期限制，用 curl + diagnostics 验证）
 
