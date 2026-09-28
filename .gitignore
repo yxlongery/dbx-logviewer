@@ -1,4 +1,6 @@
 /dist/
+/staging/
+/tmp/
 /.dbx-dev/
 /backend/target/
 .dbx-repository-signing-key.env
