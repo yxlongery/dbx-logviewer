@@ -4,13 +4,15 @@
 [![License](https://img.shields.io/github/license/yxlongery/dbx-logviewer)](LICENSE)
 ![DBX](https://img.shields.io/badge/dbx-%3E%3D0.5.68-blue)
 
-> 在 DBX 服务器上直接看 `.log` 日志：滚动查询、模糊搜索、实时监控、分块下载，开箱即用。
+> 在 DBX 服务器上直接看 `.log` 日志：滚动查询、模糊搜索、实时监控、分块下载，开箱即用。`0.2.0` 新增 SSH 远端模式：直读远程主机日志。
 
 ![工作台截图](docs/screenshot.png)
 
 ## ✨ 功能特性
 
 - 📁 **目录浏览**：面包屑下钻子目录，文件名过滤 + 排序（时间/名称/大小），点文件即查；只读展示 `.log` / `.out`（`logs/browse`）
+- 🌐 **SSH 远端**：填 SSH 主机/用户后直读远程日志，操作与本地一致；密码 + 密钥（含口令）认证，Secret 走宿主 Secret Store；主机指纹严格校验（首次留空取指纹，确认后填入）；SFTP 会话复用，实时轮询 2s
+- 📦 **折叠卡片**：文件卡片与搜索条件默认收起，标题前 ▸/▾ 指示 + 摘要行，日志区占满剩余视口
 - 🙈 **隐藏**：仅在界面隐藏、文件保留，按连接记住名单，可一键恢复；无真删操作
 - 🔍 **搜索**：关键字模糊 ＋ 级别（ALL / ERROR / WARN / INFO / DEBUG / TRACE）＋ 时间范围（含近10分钟/1小时/3天/1周快捷）＋ 分页 ＋ 正序/倒序；搜索条件自动记住，下次打开沿用（`logs/search`）
 - ⏱ **实时监控**：从末尾 200 行起播，后台轮询增量经 `logs/append` 事件推送，支持自动滚动，一键启停（`logs/tail` / `logs/stop`）
@@ -29,6 +31,7 @@
      - /vol1/1000/docker/autofeedemby/logs:/logs/autofeedemby:ro
    ```
 3. 新建「日志查看器连接」，「日志根目录」填多根（逗号分隔，如 `/app/data,/logs`），测试连通
+   - 看远程日志：`SSH 主机`/`用户`按实际填，认证方式选密码/密钥；首次`主机指纹`留空，点测试取服务端 SHA256 指纹，核对后填入再连接；远端 `log_dir` 填远程路径（同样逗号分隔多根）
 4. 从该连接进入工作台 → 下钻选文件 → 搜索 / 实时监控 / 下载
 
 ## 🖥️ 使用说明
@@ -65,6 +68,8 @@
 - 时间搜不到：行内时间格式是否 `yyyy-MM-dd HH:mm:ss`；结束留空=至今；跨天日志先“清空时间”确认总量
 - 级别搜不到：.NET 日志缩写（`[INF]` 等）与级别选项对不上时改用关键字
 - 点旧链接报错：目标挂载已迁移的断裂链，用“隐藏”藏掉即可
+- SSH 连不上：先确认主机/端口/用户；密码模式需填 SSH 密码（Secret 由宿主补齐）；密钥模式需给私钥文件或内容；指纹 mismatch 说明服务端密钥变了，核对后更新指纹
+- 卡片收起了：点标题（▸）即展开，状态自动记住
 
 ## ⚙️ 限制
 
@@ -81,7 +86,7 @@
 
 ## English Summary
 
-**Log Viewer** is a DBX plugin for browsing server `.log` files: directory drill-down (breadcrumb + filter + sort), paged search (keyword + level + time range with quick ranges + sort), live tailing via `logs/append` events, chunked download, plus UI-only hide (never deletes files). UI extras: 8 themes (DBX-native by default), `Ctrl+K` command palette, live flow glow, per-level distribution bar, skeleton loading and keyboard shortcuts (`/`, `t`, `←/→`).
+**Log Viewer** is a DBX plugin for browsing server `.log` files: directory drill-down (breadcrumb + filter + sort), paged search (keyword + level + time range with quick ranges + sort), live tailing via `logs/append` events, chunked download, plus UI-only hide (never deletes files). Since `0.2.0`: SSH remote mode (password/key with passphrase, strict host-key check, reusable SFTP session) and collapsible cards with a viewport-height log area. UI extras: 8 themes (DBX-native by default), `Ctrl+K` command palette, live flow glow, per-level distribution bar, skeleton loading and keyboard shortcuts (`/`, `t`, `←/→`).
 
 - Install from the DBX store (or a `.dbxp` in [Releases](https://github.com/yxlongery/dbx-logviewer/releases)), create a connection with comma-separated log roots (e.g. `/app/data,/logs`; mount scattered logs as independent top-level volumes like `/logs/autofeedemby:ro`, never nested under `/app/data`), then open the workbench from that connection.
 - Limits: lists `.log` / `.out` only; ≤ 500 rows/page (default 100); at most 20000 matched rows per search (truncated with notice); tail starts from the last 200 lines.
