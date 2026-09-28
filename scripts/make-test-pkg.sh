@@ -14,8 +14,7 @@ OUT=tmp/lv-${PLAT}-test-${STAMP}.dbxp
 mkdir -p tmp
 [ -f /tmp/"$BASE" ] || scp "nas:/tmp/$BASE" /tmp/"$BASE"
 if [ "$LOCAL_BIN" = 1 ]; then
-  BINMODE=release
-  ssh nas "ls /tmp/logviewer-build/backend/target/release/dbx-plugin-dbx-logviewer" >/dev/null
+  ssh nas "rm -rf /tmp/logviewer-build/backend/src && cp -r /vol1/1000/docker/opencode/data/workspace/dbx-logviewer/backend/src /tmp/logviewer-build/backend/src && cp /vol1/1000/docker/opencode/data/workspace/dbx-logviewer/backend/Cargo.toml /vol1/1000/docker/opencode/data/workspace/dbx-logviewer/backend/Cargo.lock /tmp/logviewer-build/backend/ && docker run --rm --name lvbuild -v /tmp/logviewer-build/backend:/src -v /tmp/dbx-sdk/sdk-root:/sdk -v /tmp/cargo-home:/cargo -v /tmp/logviewer-build/cfg/config.toml:/cargo/config.toml -e CARGO_HOME=/cargo -w /src rust:1-bookworm cargo build --release 2>&1 | tail -2"
   scp "nas:/tmp/logviewer-build/backend/target/release/dbx-plugin-dbx-logviewer" /tmp/lv-newbin
 fi
 LOCAL_BIN=$LOCAL_BIN python3 - "$BASE" "$OUT" "$EXE" <<'EOF'
