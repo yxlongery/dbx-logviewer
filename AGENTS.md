@@ -18,13 +18,21 @@
 
 DBX 日志查看器插件：Rust Sidecar + 单文件前端，在服务器上看 `.log` 日志，支持滚动查询、模糊搜索、实时监控、下载。源码仓库 `yxlongery/dbx-logviewer`，商店 PR `t8y2/dbx-store#164`。
 
-## 命令
+## 命令（构建与联调）
 
 - 后端构建/测试：`cargo build/test --config 'patch.crates-io.dbx-plugin-sdk.path="<CLI自带sdk-root>/plugins/sdk/rust/dbx-plugin-sdk"'`（SDK 不在 crates.io，勿改 Cargo.toml 加 path 依赖）
 - 打包：`dbx-plugin package .`（当前平台 target；Alpine 下产 musl 版，仅本地验证用）
 - 前端联调：`dbx-plugin dev --path . --port 5190`（只绑回环，跨容器连不上是预期限制，用 curl + diagnostics 验证）
+
+## 测试包链路（每次功能完成必走，验证通过才打 tag 发版）
+
+- 一键：`scripts/make-test-pkg.sh [linux|win]`（官方同版本底包换新 `ui/` + 重算 `checksums` → 存 `tmp/` → 同步 NAS `/tmp` 与 Windows 桌面 → NAS 断开安装 `ping`）
+- `linux` 包给 NAS docker 的 DBX，`win` 包给 Windows 桌面 DBX；`version` 不动覆盖安装；`tmp/` 已 `gitignore` 不进仓库
+- 单独覆盖安装（NAS 本机）：`scripts/repack-test.sh <包>`（有活跃连接会拦 `active connections`，脚本先调断开接口）
+
+## 生产与发版
+
 - 生产二进制：NAS 上 `rust:1-bookworm` 容器编 gnu release，产物重组 `.dbxp`（细节见 LRN-20260925-003）
-- dev 预览包（每次功能完成必走）：本容器 python3 zipfile 从工作区重组 `.dbxp`（版本号与源码一致，覆盖安装；包内 `executable` 改写成 `bin/linux-x64/...` 形态），scp 到 Windows 手动安装验证；验证通过才打 tag 发版
 
 ## 代码规范
 
