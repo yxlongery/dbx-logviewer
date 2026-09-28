@@ -9,6 +9,10 @@ license = "Apache-2.0"
 [dependencies]
 dbx-plugin-sdk = { version = "0.1.0" }
 serde_json = "1"
+# SSH 远端模式（B1）：russh + SFTP 纯 Rust，无系统依赖；同步 handle 内 block_on 复用全局 Runtime
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "macros", "sync"] }
+russh = { version = "0.63", default-features = false, features = ["ring", "rsa", "flate2"] }
+russh-sftp = "3"
 
 # Keep plugin binaries close to the host app's size: default release settings
 # leave ~20MB of symbols and unoptimized generic code in an OpenDAL-sized backend.

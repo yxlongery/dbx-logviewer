@@ -45,6 +45,73 @@
           "placeholder": "/app/data,/logs",
           "binding": "config",
           "required": true
+        },
+        {
+          "key": "ssh_host",
+          "label": "SSH host (empty = local)",
+          "type": "text",
+          "placeholder": "119.29.106.174，留空为本地模式",
+          "binding": "host"
+        },
+        {
+          "key": "ssh_port",
+          "label": "SSH port",
+          "type": "number",
+          "default": 22,
+          "binding": "port"
+        },
+        {
+          "key": "ssh_user",
+          "label": "SSH user",
+          "type": "text",
+          "binding": "username"
+        },
+        {
+          "key": "auth_method",
+          "label": "Auth method",
+          "type": "select",
+          "options": [
+            { "label": "密码", "value": "password" },
+            { "label": "密钥", "value": "key" }
+          ],
+          "default": "password",
+          "binding": "config"
+        },
+        {
+          "key": "ssh_password",
+          "label": "SSH password",
+          "type": "password",
+          "binding": "secret",
+          "visible_when": { "field": "auth_method", "one_of": ["password"] }
+        },
+        {
+          "key": "key_path",
+          "label": "Private key file",
+          "type": "text",
+          "binding": "config",
+          "picker": { "kind": "file", "accept": [".pem", ".key"], "content_field": "key_content" },
+          "visible_when": { "field": "auth_method", "one_of": ["key"] }
+        },
+        {
+          "key": "key_content",
+          "label": "Private key content",
+          "type": "textarea",
+          "binding": "secret",
+          "visible_when": { "field": "auth_method", "one_of": ["key"] }
+        },
+        {
+          "key": "passphrase",
+          "label": "Key passphrase (optional)",
+          "type": "password",
+          "binding": "secret",
+          "visible_when": { "field": "auth_method", "one_of": ["key"] }
+        },
+        {
+          "key": "host_fingerprint",
+          "label": "Host fingerprint (first connect empty)",
+          "type": "text",
+          "placeholder": "首次留空，报错后按提示填入 SHA256 指纹",
+          "binding": "config"
         }
       ],
       "workbench": "io.github.yxlonger.logviewer.workbench",
@@ -68,7 +135,16 @@
           "description": "浏览服务器 .log 文件，支持搜索与实时滚动。",
           "fields": {
             "display_name": { "label": "连接名称" },
-            "log_dir": { "label": "日志根目录（多目录逗号分隔）" }
+            "log_dir": { "label": "日志根目录（多目录逗号分隔，远端为远程路径）" },
+            "ssh_host": { "label": "SSH 主机（留空=本地模式）" },
+            "ssh_port": { "label": "SSH 端口" },
+            "ssh_user": { "label": "SSH 用户" },
+            "auth_method": { "label": "认证方式" },
+            "ssh_password": { "label": "SSH 密码" },
+            "key_path": { "label": "私钥文件" },
+            "key_content": { "label": "私钥内容" },
+            "passphrase": { "label": "密钥口令（可选）" },
+            "host_fingerprint": { "label": "主机指纹（首次留空）" }
           }
         },
         "io.github.yxlonger.logviewer.workbench": {
