@@ -5,8 +5,8 @@
   "tags": ["logs", "devops"],
   "homepage": "https://github.com/yxlongery/dbx-logviewer",
   "license": "Apache-2.0",
-  "source": "https://github.com/yxlongery/dbx-logviewer/tree/v0.1.6",
-  "releaseNotes": "Hide without confirm dialog; sort/wrap quick toggles in log header; no-wrap uses pre with horizontal scroll.",
+  "source": "https://github.com/yxlongery/dbx-logviewer/tree/v0.2.0",
+  "releaseNotes": "SSH remote mode (password/key with passphrase, strict host-key check, reusable SFTP session); collapsible file/search cards with summaries and viewport-height log area; backend split into modules.",
   "localizations": {
     "zh-CN": {
       "name": "日志查看器",
