@@ -6,8 +6,8 @@ use serde_json::Value;
 
 // SSH 基建：严格指纹建连、SFTP 会话复用、远端路径解析与增量读写
 
-// SSH 建连全链：TCP(15s)→指纹严格校验→密码/密钥认证→SFTP 子系统；返回复用会话
-// 指纹未确认时报错附服务端 SHA256，引导用户填入 host_fingerprint 后重试
+// SSH 建连全链：TCP(15s)→指纹校验（留空即信任，填了严格比对）→密码/密钥认证→SFTP 子系统；返回复用会话
+// 指纹不匹配时报错附服务端 SHA256，引导用户填入 host_fingerprint 后重试
 pub(crate) async fn connect_ssh(conf: &SshConf) -> Result<SshLive, PluginError> {
     use tokio::time::{timeout, Duration};
     let e = |m: String| PluginError::new(-32000, m);
@@ -18,9 +18,9 @@ pub(crate) async fn connect_ssh(conf: &SshConf) -> Result<SshLive, PluginError> 
             russh::client::connect(cfg, (conf.host.as_str(), conf.port), acc))
         .await.map_err(|_| e("SSH 连接超时（15s）".to_string()))?
         .map_err(|er| {
-            // 握手失败且拿到了服务端指纹→未确认或不匹配，报指纹引导确认
+            // 握手失败且拿到了服务端指纹→已填指纹但不匹配，报指纹引导确认；未填指纹时不可能是校验失败，走通用连接失败
             if let Some(fp) = actual.lock().ok().and_then(|g| g.clone()) {
-                if conf.fingerprint.as_ref().map(|x| normalize_fp(x) != normalize_fp(&fp)).unwrap_or(true) {
+                if conf.fingerprint.as_ref().map(|x| normalize_fp(x) != normalize_fp(&fp)).unwrap_or(false) {
                     return PluginError::new(-32602, format!(
                         "主机密钥未确认：服务端指纹 {fp}，请核对后将含 SHA256: 前缀的完整指纹填入 host_fingerprint 再连接"));
                 }

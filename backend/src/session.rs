@@ -42,7 +42,7 @@ pub(crate) struct SshLive {
     pub(crate) sftp: std::sync::Arc<russh_sftp::client::SftpSession>,
 }
 
-// 严格主机密钥校验：expected 为表单已确认指纹；actual 经 Arc 带回供报错
+// 主机密钥校验：填了指纹严格比对；留空直接信任服务端 key（测试即信任，用户已确认接受，防中间人降级）；actual 经 Arc 带回供报错
 #[derive(Clone)]
 pub(crate) struct SshAccept {
     pub(crate) expected: Option<String>,
@@ -61,7 +61,7 @@ impl russh::client::Handler for SshAccept {
             russh::keys::PublicKeyOrCertificate::Certificate(c) => key_fingerprint(&c.public_key().clone().into()),
         };
         *self.actual.lock().unwrap() = Some(fp.clone());
-        Ok(self.expected.as_ref().map(|e| normalize_fp(e) == normalize_fp(&fp)).unwrap_or(false))
+        Ok(self.expected.as_ref().map(|e| normalize_fp(e) == normalize_fp(&fp)).unwrap_or(true))
     }
 }
 

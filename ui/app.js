@@ -473,6 +473,9 @@ window.addEventListener("DOMContentLoaded", async () => {
   await loadHidden();
   const hadColl = await loadColl();
   await loadBrowse().catch(e => $("info").textContent = "加载文件列表失败：" + e.message);
+  // "/" 单根自动下钻：唯一根为全盘根且无历史目录时直接展示全盘，省一次点击（多根或有历史目录保持根列表）
+  if (!state.dir && state.dirs.length === 1 && state.dirs[0].name === "/")
+    await loadBrowse("/").catch(e => $("info").textContent = "加载文件列表失败：" + e.message);
   // 首次无历史选中：文件卡片自动展开一次，新人找得到入口
   if (!state.resumeFile && !hadColl) { coll.file = false; applyColl(); }
   // 上次选中的文件若仍在当前目录，自动恢复选中并搜索
