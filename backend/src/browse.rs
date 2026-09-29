@@ -1,4 +1,4 @@
-use crate::path::{root_name, safe_join};
+use crate::path::{is_log_name, root_name, safe_join};
 use crate::session::{rt, Session, SshLive};
 use crate::ssh::{remote_resolve, ssh_live_of};
 use crate::ALLOWED_EXTS;
@@ -46,9 +46,7 @@ impl crate::Plugin {
             if !path.is_file() {
                 continue;
             }
-            let ext_ok = path.extension().and_then(|e| e.to_str())
-                .map(|e| ALLOWED_EXTS.contains(&e.to_ascii_lowercase().as_str())).unwrap_or(false);
-            if !ext_ok {
+            if !path.file_name().and_then(|s| s.to_str()).map(is_log_name).unwrap_or(false) {
                 continue;
             }
             // 断裂软链等坏条目：列出但大小时间为 0，不整层失败（点选时 search 报路径不存在）
@@ -101,9 +99,7 @@ async fn browse_ssh(live: &SshLive, session: &Session, dir_rel: &str) -> Result<
         if !m.is_regular() && !m.is_symlink() {
             continue;
         }
-        let ext_ok = name.rsplit('.').next()
-            .map(|e| ALLOWED_EXTS.contains(&e.to_ascii_lowercase().as_str())).unwrap_or(false);
-        if !ext_ok {
+        if !is_log_name(&name) {
             continue;
         }
         let rel = if dir_rel == "/" { format!("/{name}") } else { format!("{dir_rel}/{name}") };

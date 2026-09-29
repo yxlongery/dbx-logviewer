@@ -1,4 +1,4 @@
-use crate::path::{remote_join_ok, root_name};
+use crate::path::{is_log_name, remote_join_ok, root_name};
 use crate::session::{Session, SshAccept, SshAuth, SshConf, SshLive, normalize_fp};
 use crate::{ALLOWED_EXTS, Plugin};
 use dbx_plugin_sdk::PluginError;
@@ -103,7 +103,7 @@ pub(crate) async fn count_remote_logs(live: &SshLive, dir: &str) -> Result<usize
         if name.starts_with('.') || !entry.metadata().is_regular() {
             continue;
         }
-        if name.rsplit('.').next().map(|e| ALLOWED_EXTS.contains(&e.to_ascii_lowercase().as_str())).unwrap_or(false) {
+        if is_log_name(&name) {
             n += 1;
         }
     }

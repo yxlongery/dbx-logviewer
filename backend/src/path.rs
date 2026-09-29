@@ -12,6 +12,16 @@ pub(crate) fn remote_join_ok(base_canon: &str, canon: &str) -> bool {
 }
 
 
+// 日志文件名判定：*.log / *.out（含 logrotate 轮转后缀 audit.log.1）；压缩包 .gz 等不认（读不了内容）
+pub(crate) fn is_log_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    let base = match lower.rsplit_once('.') {
+        Some((stem, tail)) if !tail.is_empty() && tail.bytes().all(|c| c.is_ascii_digit()) => stem,
+        _ => lower.as_str(),
+    };
+    base.rsplit('.').next().map(|e| ALLOWED_EXTS.contains(&e)).unwrap_or(false)
+}
+
 pub(crate) fn count_log_files(dir: &str) -> Result<usize, PluginError> {
     let entries = std::fs::read_dir(dir).map_err(|e| PluginError::new(-32000, format!("无法读取目录 {dir}：{e}")))?;
     let mut n = 0;
@@ -20,11 +30,7 @@ pub(crate) fn count_log_files(dir: &str) -> Result<usize, PluginError> {
         if !p.is_file() {
             continue;
         }
-        if p.extension()
-            .and_then(|e| e.to_str())
-            .map(|e| ALLOWED_EXTS.contains(&e.to_ascii_lowercase().as_str()))
-            .unwrap_or(false)
-        {
+        if p.file_name().and_then(|s| s.to_str()).map(is_log_name).unwrap_or(false) {
             n += 1;
         }
     }
@@ -138,6 +144,17 @@ mod tests {
         let s2 = test_session(vec!["/var/log".to_string()]);
         assert!(safe_join(&s2, "/etc/hostname").is_err());
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    // 轮转日志识别：audit.log.1 照列，.gz/无关后缀不认
+    #[test]
+    fn is_log_name_covers_rotated() {
+        assert!(crate::path::is_log_name("audit.log"));
+        assert!(crate::path::is_log_name("audit.log.1"));
+        assert!(crate::path::is_log_name("APP.OUT.2"));
+        assert!(!crate::path::is_log_name("audit.log.1.gz"));
+        assert!(!crate::path::is_log_name("note.txt"));
+        assert!(!crate::path::is_log_name("nolog"));
     }
 
     // browse 只列一层：子层与非日志不出，穿越/绝对拒绝；断裂链列出不整层失败

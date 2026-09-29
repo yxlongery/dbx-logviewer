@@ -90,7 +90,8 @@ pub(crate) fn match_line(text: &str, keyword: &str, level: &str, start: Option<u
             }
         }
         None => {
-            if !keyword.is_empty() && !text.contains(keyword) {
+            // 多关键字：空格分隔，全部包含才命中（对标同类采集器）
+            if !keyword.is_empty() && !keyword.split_whitespace().all(|w| text.contains(w)) {
                 return false;
             }
         }
@@ -301,6 +302,10 @@ mod tests {
         assert!(!match_line(line, "other", "ALL", None, None, None)); // 关键字不符
         assert!(match_line(line, "", "ALL", Some(20260830110000), Some(20260830110500), None));
         assert!(!match_line(line, "", "ALL", Some(20260830120000), None, None)); // 时间下限之外
+        // 多关键字空格分隔：全部包含才命中
+        assert!(match_line(line, "aiban boom", "ALL", None, None, None));
+        assert!(!match_line(line, "aiban other", "ALL", None, None, None));
+        assert!(match_line(line, "  aiban   boom  ", "ALL", None, None, None)); // 多余空格容忍
         // 无时间戳的行：无时间条件保留，有条件跳过
         assert!(match_line("plain line", "", "ALL", None, None, None));
         assert!(!match_line("plain line", "", "ALL", Some(20260830110000), None, None));

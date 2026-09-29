@@ -18,7 +18,10 @@ function lineHtml(no, text, fresh, isCtx) {
   if (fx.struct) h = structHtml(h, stash);
   const kw = $("keyword").value.trim();
   // 正则模式下 kw 是表达式，字面 split 无意义则跳过高亮（后端已按正则过滤）
-  if (kw && !$("regexCk").checked) h = h.split(esc(kw)).join("<mark>"+esc(kw)+"</mark>");
+  // 多关键字：逐词高亮（与后端空格分隔全部匹配对齐）
+  if (kw && !$("regexCk").checked) for (const w of kw.split(/\s+/)) {
+    if (w) h = h.split(esc(w)).join("<mark>"+esc(w)+"</mark>");
+  }
   if (fx.struct) h = h.replace(/\x00(\d+)\x00/g, (_, i) => stash[+i]);
   const cls = /ERROR|FATAL/i.test(text) ? "err" : /WARN/i.test(text) ? "warn" : "";
   // fresh 实时行滑入动画由 CSS .fresh 承载；ctx 上下文行淡显
@@ -414,6 +417,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("fileFilter").oninput = e => { state.fileFilter = e.target.value; renderFiles(); };
   $("fileSort").onchange = e => { state.fileSort = e.target.value; renderFiles(); };
   document.querySelectorAll("#quickrow [data-min]").forEach(b => b.onclick = () => setQuick(+b.dataset.min));
+  document.querySelectorAll("#levelrow [data-lv]").forEach(b => b.onclick = () => {
+    $("level").value = b.dataset.lv; state.page = 1;
+    doSearch().catch(e => $("info").textContent = "搜索失败：" + e.message);
+  });
   $("clearTime").onclick = () => { $("start").value = ""; $("end").value = ""; };
   $("prev").onclick = () => { if (state.page > 1) { state.page--; doSearch().catch(e => $("info").textContent = e.message); } };
   $("next").onclick = () => { state.page++; doSearch().catch(e => { state.page--; $("info").textContent = e.message; }); };

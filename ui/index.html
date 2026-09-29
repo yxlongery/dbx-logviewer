@@ -40,10 +40,16 @@
 <div class="card collapsed" id="searchCard"><h2 class="collhead" id="searchHead">🔍 搜索条件<span class="collsum" id="searchSum"></span></h2>
 <div class="collbody" id="searchBody">
   <div class="grid">
-    <div><label>关键字 <label style="display:inline;font-weight:400"><input id="regexCk" type="checkbox" style="width:auto" /> 正则</label></label><input id="keyword" placeholder="输入搜索关键字，勾正则用表达式" /></div>
+    <div><label>关键字 <label style="display:inline;font-weight:400"><input id="regexCk" type="checkbox" style="width:auto" /> 正则</label></label><input id="keyword" placeholder="多词空格分隔（全部匹配），勾正则用表达式" /></div>
     <div><label>日志级别</label><select id="level">
       <option value="ALL">全部</option><option>ERROR</option><option>WARN</option>
-      <option>INFO</option><option>DEBUG</option><option>TRACE</option></select></div>
+      <option>INFO</option><option>DEBUG</option><option>TRACE</option></select>
+      <div class="row" id="levelrow" style="margin-top:6px">
+        <button class="ghost sm" data-lv="ALL">全部</button>
+        <button class="ghost sm" data-lv="ERROR">ERROR</button>
+        <button class="ghost sm" data-lv="WARN">WARN</button>
+        <button class="ghost sm" data-lv="INFO">INFO</button>
+      </div></div>
     <div><label>每页行数</label><select id="pageSize">
       <option>50</option><option selected>100</option><option>200</option><option>500</option></select></div>
   </div>
