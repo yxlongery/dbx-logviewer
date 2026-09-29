@@ -61,8 +61,19 @@ impl russh::client::Handler for SshAccept {
             russh::keys::PublicKeyOrCertificate::Certificate(c) => key_fingerprint(&c.public_key().clone().into()),
         };
         *self.actual.lock().unwrap() = Some(fp.clone());
-        Ok(self.expected.as_ref().map(|e| e.trim() == fp).unwrap_or(false))
+        Ok(self.expected.as_ref().map(|e| normalize_fp(e) == normalize_fp(&fp)).unwrap_or(false))
     }
+}
+
+// 指纹归一化：兼容用户去前缀粘贴（有/无 SHA256:、大小写、首尾空格都视为相同）
+pub(crate) fn normalize_fp(s: &str) -> String {
+    let t = s.trim();
+    let body = if t.len() >= 7 && t[..7].eq_ignore_ascii_case("sha256:") {
+        t[7..].trim()
+    } else {
+        t
+    };
+    body.to_string()
 }
 
 // 服务端公钥指纹：ssh-key 原生 SHA256 格式（"SHA256:..."）
@@ -131,6 +142,16 @@ pub(crate) fn test_session(dirs: Vec<String>) -> Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // 指纹归一化：有/无 SHA256: 前缀、大小写、首尾空格都视为相同（用户去前缀粘贴的兼容）
+    #[test]
+    fn normalize_fp_tolerates_prefix() {
+        let full = "SHA256:UtSATc4UWxw23juuWenUpPqYhcSxb6nIt4FTBdpND3w";
+        assert_eq!(normalize_fp(full), "UtSATc4UWxw23juuWenUpPqYhcSxb6nIt4FTBdpND3w");
+        assert_eq!(normalize_fp("UtSATc4UWxw23juuWenUpPqYhcSxb6nIt4FTBdpND3w"), normalize_fp(full));
+        assert_eq!(normalize_fp("  sha256:UtSATc4UWxw23juuWenUpPqYhcSxb6nIt4FTBdpND3w  "), normalize_fp(full));
+        assert_ne!(normalize_fp("SHA256:other"), normalize_fp(full));
+    }
 
     // SSH 表单解析：留空=本地；密码缺失报错；密钥分支取内容/路径/口令；端口读 number
     #[test]

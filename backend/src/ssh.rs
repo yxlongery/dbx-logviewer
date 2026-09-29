@@ -1,5 +1,5 @@
 use crate::path::{remote_join_ok, root_name};
-use crate::session::{Session, SshAccept, SshAuth, SshConf, SshLive};
+use crate::session::{Session, SshAccept, SshAuth, SshConf, SshLive, normalize_fp};
 use crate::{ALLOWED_EXTS, Plugin};
 use dbx_plugin_sdk::PluginError;
 use serde_json::Value;
@@ -20,9 +20,9 @@ pub(crate) async fn connect_ssh(conf: &SshConf) -> Result<SshLive, PluginError> 
         .map_err(|er| {
             // 握手失败且拿到了服务端指纹→未确认或不匹配，报指纹引导确认
             if let Some(fp) = actual.lock().ok().and_then(|g| g.clone()) {
-                if conf.fingerprint.as_ref().map(|x| x.trim() != fp).unwrap_or(true) {
+                if conf.fingerprint.as_ref().map(|x| normalize_fp(x) != normalize_fp(&fp)).unwrap_or(true) {
                     return PluginError::new(-32602, format!(
-                        "主机密钥未确认：服务端指纹 {fp}，请核对后填入 host_fingerprint 再连接"));
+                        "主机密钥未确认：服务端指纹 {fp}，请核对后将含 SHA256: 前缀的完整指纹填入 host_fingerprint 再连接"));
                 }
             }
             e(format!("SSH 连接失败：{er:?}"))

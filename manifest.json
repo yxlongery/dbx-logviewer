@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "io.github.yxlonger.logviewer",
   "name": "Log Viewer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "yxlonger",
   "description": "查看服务器 .log 日志，支持滚动查询与模糊搜索",
   "icon": "assets/plugin.svg",
@@ -110,7 +110,7 @@
           "key": "host_fingerprint",
           "label": "Host fingerprint (first connect empty)",
           "type": "text",
-          "placeholder": "首次留空，报错后按提示填入 SHA256 指纹",
+          "placeholder": "首次留空，报错后按提示填入含 SHA256: 前缀的完整指纹（前后缀空格不敏感）",
           "binding": "config"
         }
       ],
