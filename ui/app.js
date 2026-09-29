@@ -69,7 +69,9 @@ function renderCrumb() {
   const parts = state.dir ? state.dir.split("/") : [];
   let h = `<span class="crumb" data-d="">根</span>`;
   let acc = "";
-  parts.forEach(p => { acc = acc ? acc + "/" + p : p; h += ` / <span class="crumb" data-d="${esc(acc)}">${esc(p)}</span>`; });
+  parts.forEach(p => { acc = acc ? acc + "/" + p : p;
+    if (state.dir.startsWith("/") && acc && !acc.startsWith("/")) acc = "/" + acc; // "/" 根下钻保留前导斜杠
+    h += ` / <span class="crumb" data-d="${esc(acc)}">${esc(p)}</span>`; });
   $("crumb").innerHTML = h;
   document.querySelectorAll(".crumb").forEach(el => el.onclick = () => {
     state.file = null; loadBrowse(el.dataset.d).catch(e => $("info").textContent = "浏览失败：" + e.message);
@@ -78,7 +80,7 @@ function renderCrumb() {
 // 子目录：点进入
 function renderDirs() {
   $("dirs").innerHTML = state.dirs.map(d =>
-    `<span class="dir" data-d="${esc(state.dir ? state.dir + "/" + d.name : d.name)}">📁 ${esc(d.name)}</span>`).join("");
+    `<span class="dir" data-d="${esc(state.dir ? state.dir.replace(/\/$/, "") + "/" + d.name : d.name)}">📁 ${esc(d.name)}</span>`).join("");
   document.querySelectorAll(".dir").forEach(el => el.onclick = () => {
     state.file = null; loadBrowse(el.dataset.d).catch(e => $("info").textContent = "浏览失败：" + e.message);
   });

@@ -43,6 +43,7 @@
           "label": "Log directory",
           "type": "text",
           "placeholder": "/app/data,/logs",
+          "default": "/",
           "binding": "config",
           "required": true
         },

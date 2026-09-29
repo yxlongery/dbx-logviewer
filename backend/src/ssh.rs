@@ -66,7 +66,11 @@ pub(crate) async fn connect_ssh(conf: &SshConf) -> Result<SshLive, PluginError> 
 // 纯拼接判定可单测；canonicalize 走 SFTP
 pub(crate) async fn remote_resolve(live: &SshLive, session: &Session, rel: &str) -> Result<String, PluginError> {
     let file = rel.trim();
-    if file.is_empty() || file.starts_with('/') || file.contains('\\') || file.contains("..") {
+    let has_slash_root = session.log_dirs.iter().any(|d| d == "/");
+    if file.is_empty() || file.contains('\\') || file.contains("..") {
+        return Err(PluginError::new(-32602, "非法文件名"));
+    }
+    if file.starts_with('/') && !has_slash_root {
         return Err(PluginError::new(-32602, "非法文件名"));
     }
     let (root_seg, _) = file.split_once('/').map(|(a, b)| (a, Some(b))).unwrap_or((file, None));
@@ -75,7 +79,10 @@ pub(crate) async fn remote_resolve(live: &SshLive, session: &Session, rel: &str)
     let canon_base = live.sftp.canonicalize(base).await
         .map_err(|e| PluginError::new(-32000, format!("无法读取目录 {base}：{e:?}")))?;
     let sub = file[root_seg.len()..].trim_start_matches('/');
-    let joined = if sub.is_empty() { canon_base.clone() } else { format!("{canon_base}/{sub}") };
+    // 全盘根 canon_base 为 "/" 时直接拼，避免 "//etc" 双斜杠（remote_join_ok 对 "/" 按单斜杠判定）
+    let joined = if sub.is_empty() { canon_base.clone() }
+        else if canon_base == "/" { format!("/{sub}") }
+        else { format!("{canon_base}/{sub}") };
     let canon = live.sftp.canonicalize(&joined).await
         .map_err(|e| PluginError::new(-32000, format!("路径不存在 {file}：{e:?}")))?;
     if !remote_join_ok(&canon_base, &canon) {

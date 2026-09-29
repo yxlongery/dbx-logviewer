@@ -20,7 +20,7 @@ impl crate::Plugin {
         let dir_rel = params.get("dir").and_then(Value::as_str).unwrap_or("").trim().to_string();
         // 空串为根：直接列各根短名，不读盘
         if dir_rel.is_empty() {
-            let mut dirs: Vec<Value> = session.log_dirs.iter().map(|d| json!({ "name": root_name(d) })).collect();
+            let mut dirs: Vec<Value> = session.log_dirs.iter().map(|d| json!({ "name": if d == "/" { "/".to_string() } else { root_name(d) } })).collect();
             dirs.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
             return Ok(json!({ "dir": "", "dirs": dirs, "entries": [] }));
         }
@@ -57,8 +57,8 @@ impl crate::Plugin {
                 .map(|d| d.as_secs()).unwrap_or(0))).unwrap_or((0, 0));
             // 链接目标：普通文件为 null，软链返回目标绝对路径（文本节点展示用）
             let link_target = std::fs::read_link(&path).ok().map(|p| p.to_string_lossy().to_string());
-            // 相对路径透给前端：search/tail/download 直接用它，不再拼
-            let rel = if dir_rel.is_empty() { name } else { format!("{dir_rel}/{name}") };
+            // 相对路径透给前端：search/tail/download 直接用它，不再拼；"/" 根的 rel 带 / 前缀（如 /etc/a.log）
+            let rel = if dir_rel.is_empty() { name } else if dir_rel == "/" { format!("/{name}") } else { format!("{dir_rel}/{name}") };
             entries.push(json!({
                 "name": rel,
                 "size": size,
@@ -74,7 +74,7 @@ impl crate::Plugin {
     // logs/browse 远端版：SFTP 列单层；软链按跟随 metadata，失败则大小时间为 0（不断层）
 async fn browse_ssh(live: &SshLive, session: &Session, dir_rel: &str) -> Result<Value, PluginError> {
     if dir_rel.is_empty() {
-        let mut dirs: Vec<Value> = session.log_dirs.iter().map(|d| json!({ "name": root_name(d) })).collect();
+        let mut dirs: Vec<Value> = session.log_dirs.iter().map(|d| json!({ "name": if d == "/" { "/".to_string() } else { root_name(d) } })).collect();
         dirs.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
         return Ok(json!({ "dir": "", "dirs": dirs, "entries": [] }));
     }
@@ -106,7 +106,7 @@ async fn browse_ssh(live: &SshLive, session: &Session, dir_rel: &str) -> Result<
         if !ext_ok {
             continue;
         }
-        let rel = format!("{dir_rel}/{name}");
+        let rel = if dir_rel == "/" { format!("/{name}") } else { format!("{dir_rel}/{name}") };
         entries.push(json!({
             "name": rel,
             "size": m.size.unwrap_or(0),
