@@ -1,8 +1,7 @@
 #!/bin/bash
 # 一键测试包：重组 → 存 tmp/ → scp 桌面 →（linux）NAS 断开+安装+ping
 # 用法（本容器）：scripts/make-test-pkg.sh [linux|win] [--local-bin]，默认 linux
-# 口径：官方同版本底包为底；--local-bin 用 NAS 现编二进制+工作区 manifest（后端/表单变了时用），
-#   否则只换 ui/（纯前端改动，免重编）；version 不动覆盖安装；tmp/ 已 gitignore
+# 口径：官方同版本底包为底；一律加 --local-bin（NAS 现编二进制+工作区 manifest；纯前端模式复用底包旧 manifest 会版本回退，机理见 LRN-20260929-002）；version 不动覆盖安装；tmp/ 已 gitignore
 set -e
 cd "$(dirname "$0")/.."
 PLAT=${1:-linux}

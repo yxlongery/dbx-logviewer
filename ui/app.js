@@ -332,16 +332,16 @@ async function loadColl() {
   return had;
 }
 async function saveCond() {
-  try { if (window.dbxPlugin.capabilities.storage)
-    await window.dbxPlugin.storage.set("cond", { keyword: $("keyword").value, level: $("level").value,
+  try { if (window.dbxPlugin.capabilities.storage && state.connId)
+    await window.dbxPlugin.storage.set("cond:" + state.connId, { keyword: $("keyword").value, level: $("level").value,
       pageSize: $("pageSize").value, sort: $("sort").value, dir: state.dir, file: state.file,
       regex: $("regexCk").checked, context: $("context").value,
       wrap: $("logs").classList.contains("wrap") });
   } catch {} // 存储失败不阻塞主流程
 }
 async function loadCond() {
-  try { if (window.dbxPlugin.capabilities.storage) {
-    const c = await window.dbxPlugin.storage.get("cond");
+  try { if (window.dbxPlugin.capabilities.storage && state.connId) {
+    const c = await window.dbxPlugin.storage.get("cond:" + state.connId);
     if (c) { $("keyword").value = c.keyword||""; $("level").value = c.level||"ALL";
       $("pageSize").value = c.pageSize||"100"; $("sort").value = c.sort||"desc";
       $("regexCk").checked = !!c.regex; $("context").value = c.context||"0";
@@ -472,7 +472,12 @@ window.addEventListener("DOMContentLoaded", async () => {
   await loadFx();
   await loadHidden();
   const hadColl = await loadColl();
-  await loadBrowse().catch(e => $("info").textContent = "加载文件列表失败：" + e.message);
+  try { await loadBrowse(); }
+  catch (e) {
+    if (state.dir) { state.dir = ""; // 脏目录（如换连接残留）回根重载一次
+      await loadBrowse().catch(e2 => $("info").textContent = "加载文件列表失败：" + e2.message);
+    } else $("info").textContent = "加载文件列表失败：" + e.message;
+  }
   // 单根自动下钻：唯一根且无历史目录时直接进入（"/" 进全盘，普通单根跳过短名层），多根保持根列表
   if (!state.dir && state.dirs.length === 1)
     await loadBrowse(state.dirs[0].name).catch(e => $("info").textContent = "加载文件列表失败：" + e.message);

@@ -26,7 +26,7 @@ DBX 日志查看器插件：Rust Sidecar + 单文件前端，在服务器上看 
 
 ## 测试包链路（每次功能完成必走，验证通过才打 tag 发版）
 
-- 一键：`scripts/make-test-pkg.sh [linux|win]`（官方同版本底包换新 `ui/` + 重算 `checksums` → 存 `tmp/` → 同步 NAS `/tmp` 与 Windows 桌面 → NAS 断开安装 `ping`）
+- 一键：`scripts/make-test-pkg.sh [linux|win] --local-bin`（一律带，后端重编+工作区 manifest+新 `ui/` 重算 `checksums` → 存 `tmp/` → 同步 NAS `/tmp` 与 Windows 桌面 → NAS 断开安装 `ping`；纯前端模式复用底包旧 manifest 会版本回退，见 LRN-20260929-002）
 - `linux` 包给 NAS docker 的 DBX，`win` 包给 Windows 桌面 DBX；`version` 不动覆盖安装；`tmp/` 已 `gitignore` 不进仓库
 - 安装一律走本机脚本（反代 `dbx.conf` 已加 `client_max_body_size 20m`，UI 直传也可）
 - 单独覆盖安装（NAS 本机）：`scripts/repack-test.sh <包>`（有活跃连接会拦 `active connections`，脚本先调断开接口）
