@@ -1,12 +1,12 @@
 {
   "name": "Log Viewer",
-  "description": "查看服务器 .log 日志，支持滚动查询、模糊搜索、实时监控、分块下载；0.2.0 新增 SSH 远端模式。",
+  "description": "查看服务器 .log 日志，支持滚动查询、模糊搜索、实时监控、分块下载。",
   "icon": "assets/plugin.svg",
   "tags": ["logs", "devops"],
   "homepage": "https://github.com/yxlongery/dbx-logviewer",
   "license": "Apache-2.0",
-  "source": "https://github.com/yxlongery/dbx-logviewer/tree/v0.2.0",
-  "releaseNotes": "SSH 远端模式（密码/密钥+口令认证，主机指纹严格校验，SFTP 会话复用）；文件/搜索卡片默认折叠带摘要，日志区占满视口；后端拆分为模块。",
+  "source": "https://github.com/yxlongery/dbx-logviewer/tree/v0.2.1",
+  "releaseNotes": "0.2.1：未填主机指纹直连（测试即信任，留空跳过校验；填了仍严格锁定，防中间人请填）；日志根目录支持 / 全盘并默认填充，单根自动下钻；连接表单精简。",
   "localizations": {
     "zh-CN": {
       "name": "日志查看器",
