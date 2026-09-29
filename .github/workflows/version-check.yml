@@ -1,0 +1,29 @@
+name: Version check
+
+# 版本一致性门禁：manifest.json == backend/Cargo.toml == backend/Cargo.lock；
+# 打 tag（v*）时再校验 tag 去 v 前缀等于文件版。不等即红，防手滑发版。
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check versions agree
+        run: |
+          M=$(python3 -c "import json;print(json.load(open('manifest.json'))['version'])")
+          C=$(grep '^version' backend/Cargo.toml | head -1 | cut -d'"' -f2)
+          L=$(grep -A1 'name = "dbx-plugin-dbx-logviewer"' backend/Cargo.lock | grep '^version' | cut -d'"' -f2)
+          echo "manifest=$M cargo=$C lock=$L"
+          [ "$M" = "$C" ] && [ "$C" = "$L" ] || { echo "版本不一致"; exit 1; }
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            T="${{ github.ref_name }}"; T="${T#v}"
+            echo "tag=$T"
+            [ "$T" = "$M" ] || { echo "tag($T)与文件版($M)不一致"; exit 1; }
+          fi
+          echo "版本一致"
