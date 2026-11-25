@@ -12,14 +12,24 @@ pub(crate) fn remote_join_ok(base_canon: &str, canon: &str) -> bool {
 }
 
 
-// 日志文件名判定：*.log / *.out（含 logrotate 轮转后缀 audit.log.1）；压缩包 .gz 等不认（读不了内容）
+fn strip_rotation(name: &str) -> &str {
+    match name.rsplit_once('.') {
+        Some((stem, tail)) if !tail.is_empty() && tail.bytes().all(|c| c.is_ascii_digit()) => stem,
+        _ => name,
+    }
+}
+
+// gzip 日志支持 *.log.gz 和 logrotate 的 *.log.N.gz。
+pub(crate) fn is_gzip_log_name(name: &str) -> bool {
+    let lower = name.rsplit('/').next().unwrap_or(name).to_ascii_lowercase();
+    lower.strip_suffix(".gz")
+        .is_some_and(|stem| strip_rotation(stem).ends_with(".log"))
+}
+
 pub(crate) fn is_log_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    let base = match lower.rsplit_once('.') {
-        Some((stem, tail)) if !tail.is_empty() && tail.bytes().all(|c| c.is_ascii_digit()) => stem,
-        _ => lower.as_str(),
-    };
-    base.rsplit('.').next().map(|e| ALLOWED_EXTS.contains(&e)).unwrap_or(false)
+    is_gzip_log_name(name)
+        || strip_rotation(&lower).rsplit('.').next().is_some_and(|e| ALLOWED_EXTS.contains(&e))
 }
 
 pub(crate) fn count_log_files(dir: &str) -> Result<usize, PluginError> {
@@ -146,13 +156,17 @@ mod tests {
         std::fs::remove_dir_all(&base).ok();
     }
 
-    // 轮转日志识别：audit.log.1 照列，.gz/无关后缀不认
     #[test]
     fn is_log_name_covers_rotated() {
         assert!(crate::path::is_log_name("audit.log"));
         assert!(crate::path::is_log_name("audit.log.1"));
         assert!(crate::path::is_log_name("APP.OUT.2"));
-        assert!(!crate::path::is_log_name("audit.log.1.gz"));
+        assert!(is_log_name("audit.log.gz"));
+        assert!(is_log_name("AUDIT.LOG.1.GZ"));
+        assert!(is_gzip_log_name("/logs/AUDIT.LOG.1.GZ"));
+        assert!(!is_gzip_log_name("audit.log.1"));
+        assert!(!is_log_name("database.sql.gz"));
+        assert!(!is_log_name("nohup.out.gz"));
         assert!(!crate::path::is_log_name("note.txt"));
         assert!(!crate::path::is_log_name("nolog"));
     }

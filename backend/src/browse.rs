@@ -1,7 +1,6 @@
 use crate::path::{is_log_name, root_name, safe_join};
 use crate::session::{rt, Session, SshLive};
 use crate::ssh::{remote_resolve, ssh_live_of};
-use crate::ALLOWED_EXTS;
 use dbx_plugin_sdk::PluginError;
 use serde_json::{json, Value};
 

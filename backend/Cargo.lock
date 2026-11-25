@@ -387,6 +387,7 @@ name = "dbx-plugin-dbx-logviewer"
 version = "0.2.1"
 dependencies = [
  "dbx-plugin-sdk",
+ "flate2",
  "russh",
  "russh-sftp",
  "serde_json",

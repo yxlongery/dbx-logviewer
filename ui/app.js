@@ -99,13 +99,14 @@ function visibleFiles() {
 }
 // 短名：相对路径只取末段展示，全路径放 title 与 tgt 行
 const shortName = rel => rel.split("/").pop();
+const isGzipLog = file => /\.log(?:\.\d+)?\.gz$/i.test(file || "");
 // Bento 分档：>10MB 大卡跨3列，>1MB 中卡，其余小卡（只定跨度，不改过滤排序）
 const bento = f => f.size > 10485760 ? " bento-lg" : f.size > 1048576 ? " bento-md" : " bento-sm";
 function renderFiles() {
   const list = visibleFiles();
   $("files").innerHTML = list.map(f =>
     `<div class="file${state.file === f.name ? " active" : ""}${bento(f)}" data-n="${esc(f.name)}"><span class="hide" data-n="${esc(f.name)}" title="仅在界面隐藏，文件保留">隐藏</span><b>${esc(shortName(f.name))}</b><span>${fmtSize(f.size)}　${fmtTime(f.modified_at)}</span><span class="tgt" title="${esc(f.name)}">${esc(f.name)}</span></div>`).join("")
-    || '<div class="empty"><span class="big">📂</span>本目录下没有匹配的 .log / .out 文件</div>';
+    || '<div class="empty"><span class="big">📂</span>本目录下没有匹配的 .log / .out / .log.gz 文件</div>';
   document.querySelectorAll(".file").forEach(el => el.onclick = () => {
     document.querySelectorAll(".file").forEach(x => x.classList.remove("active"));
     el.classList.add("active"); state.file = el.dataset.n; state.page = 1; doSearch();
@@ -113,7 +114,7 @@ function renderFiles() {
   document.querySelectorAll(".file .hide").forEach(el => el.onclick = e => {
     e.stopPropagation(); doHide(el.dataset.n);
   });
-  renderHiddenBar(); syncSums();
+  renderHiddenBar(); syncSums(); syncTailAvailability();
 }
 // 隐藏只藏界面、文件保留：名单按连接存 storage，可恢复
 // 直接执行无 confirm：沙盒 iframe 无 allow-modals 时 confirm() 静默返回 false 导致点隐藏没反应；误点用恢复全部找回
@@ -151,6 +152,7 @@ function setQuick(min) {
   state.page = 1; doSearch().catch(e => $("info").textContent = "搜索失败：" + e.message);
 }
 async function doSearch() {
+  syncTailAvailability();
   if (!state.file) { $("info").textContent = "请先选择日志文件"; return; }
   // 骨架屏：等待期间占位（关特效则直接空白等待）
   if (fx.skel) $("logs").innerHTML = '<div class="skel"></div>'.repeat(8);
@@ -352,6 +354,11 @@ async function loadCond() {
       if (c.dir) state.dir = c.dir; state.resumeFile = c.file||null; }
   } } catch {}
 }
+function syncTailAvailability() {
+  const tail = $("tail");
+  tail.disabled = isGzipLog(state.file) && !state.tailing;
+  tail.title = tail.disabled ? "gzip 归档不支持实时监控" : "";
+}
 async function toggleTail() {
   if (state.tailing) {
     await invoke("logs/stop", { streamId: state.streamId }).catch(()=>{});
@@ -359,6 +366,7 @@ async function toggleTail() {
     $("tail").textContent = "⏱ 实时监控";
     $("status").classList.remove("live"); $("statusText").textContent = "实时通道未连接";
     rateShown = false;
+    syncTailAvailability();
     return;
   }
   if (!state.file) { $("info").textContent = "请先选择日志文件"; return; }
@@ -366,26 +374,28 @@ async function toggleTail() {
     regex: $("regexCk").checked,
     level: $("level").value, lastN: 200 }, { timeoutMs: 15000 });
   state.streamId = r.streamId; state.tailing = true;
+  syncTailAvailability();
   $("tail").textContent = "⏹ 停止监控";
   $("status").classList.add("live"); $("statusText").textContent = "实时监控中";
 }
 async function doDownload() {
   if (!state.file) { $("info").textContent = "请先选择日志文件"; return; }
+  const file = state.file;
+  const name = isGzipLog(file) ? shortName(file).slice(0, -3) : file;
+  const filters = { keyword: $("keyword").value, regex: $("regexCk").checked, level: $("level").value };
   $("download").disabled = true;
   try {
     // 分块拉取后拼装：单块 JSON 不超限，大文件多轮拉
     const chunks = []; let offset = 0;
     for (let i = 0; i < 1000; i++) {
-      const r = await invoke("logs/downloadChunk", { file: state.file, keyword: $("keyword").value,
-        regex: $("regexCk").checked,
-        level: $("level").value, offset, length: 2000 }, { timeoutMs: 60000 });
+      const r = await invoke("logs/downloadChunk", { file, ...filters, offset, length: 2000 }, { timeoutMs: 60000 });
       chunks.push(r.lines.join("\n")); offset = r.nextOffset;
       $("info").textContent = `下载中…已拉取 ${offset} 行`;
       if (r.eof) break;
     }
     const text = chunks.join("\n"), ft = window.dbxPlugin.fileTransfer;
     if (ft) { // 桌面端：原生保存对话框 + 分块写入
-      const t = await ft.beginSave({ name: state.file });
+      const t = await ft.beginSave({ name });
       if (!t) { $("info").textContent = "已取消保存"; return; }
       const data = new TextEncoder().encode(text);
       for (let o = 0; o < data.length; o += 256*1024)
@@ -394,7 +404,7 @@ async function doDownload() {
     } else { // Web 宿主：Blob 回退下载
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-      a.download = state.file; a.click(); URL.revokeObjectURL(a.href);
+      a.download = name; a.click(); URL.revokeObjectURL(a.href);
     }
   } catch (e) { $("info").textContent = "下载失败：" + e.message; }
   finally { $("download").disabled = false; }
@@ -403,7 +413,7 @@ function onBackendEvent(e) {
   // 兼容不同宿主版本的事件包形：{method,params} 或扁平体
   const m = e && (e.method || e.type || e.event);
   const p = (e && (e.params || e.data)) || e || {};
-  if (m === "logs/append" && p.streamId === state.streamId && Array.isArray(p.lines)) {
+  if (m === "logs/append" && p.streamId === state.streamId && p.file === state.file && Array.isArray(p.lines)) {
     const atBottom = $("logs").scrollTop + $("logs").clientHeight >= $("logs").scrollHeight - 40;
     // fresh 标记滑入动画；rateN 供吞吐计数
     $("logs").insertAdjacentHTML("beforeend", p.lines.map(t => lineHtml("", t, true)).join(""));

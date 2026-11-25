@@ -16,7 +16,7 @@
 
 ## 项目概览
 
-DBX 日志查看器插件：Rust Sidecar + 单文件前端，在服务器上看 `.log` 日志，支持滚动查询、模糊搜索、实时监控、下载。源码仓库 `yxlongery/dbx-logviewer`，商店 PR `t8y2/dbx-store#164`。
+DBX 日志查看器插件：Rust Sidecar + 单文件前端，支持本地和 SSH 日志浏览、搜索、实时监控、下载。`.log.gz` / `.log.N.gz` 归档流式解压，支持搜索和文本下载。源码仓库 `yxlongery/dbx-logviewer`，商店 PR `t8y2/dbx-store#164`。
 
 ## 命令（构建与联调）
 
@@ -37,7 +37,7 @@ DBX 日志查看器插件：Rust Sidecar + 单文件前端，在服务器上看 
 
 ## 代码规范
 
-- 后端依赖：`russh` + `russh-sftp` + `tokio`（SSH 远端模式，B1 已评估通过，纯 Rust 无系统依赖，`ring` 后端兼顾 musl/gnu）；其余不加新 crate
+- 后端依赖：`russh` + `russh-sftp` + `tokio`（SSH 远端模式，纯 Rust 无系统依赖，`ring` 后端兼顾 musl/gnu）。gzip 解压复用 `russh` 已引入的 `flate2`。其余不加新 crate。
 - JSON 单消息 8MB 上限：大文件走分页/分块，勿整包返回
 - Secret（密码/私钥）只走宿主 Secret Store，不进内存日志/context/事件
 - 新增 Rust 方法配 `#[cfg(test)]` 单元测试（纯函数直测：解析/过滤/路径防护）

@@ -1,12 +1,8 @@
-use crate::path::safe_join;
+use crate::log_file::LogFile;
 use crate::regex::SimpleRegex;
-use crate::session::{rt, Session, SshLive};
-use crate::ssh::{remote_resolve, ssh_live_of};
 use dbx_plugin_sdk::PluginError;
 use serde_json::{json, Value};
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 
 // 搜索：关键字/级别/时间过滤 + 分页 + 上下文；SSH 版两遍扫语义一致
 
@@ -14,12 +10,7 @@ impl crate::Plugin {
 // logs/search：逐行流读 + 关键字模糊 + 级别 + 时间范围 + 排序 + 分页
     pub(crate) fn search(&self, params: &Value) -> Result<Value, PluginError> {
         let session = self.session(params)?;
-        // SSH 模式走 SFTP 两遍扫（复用会话）
-        if session.ssh.is_some() {
-            let live = ssh_live_of(self, params, &session)?;
-            return rt().block_on(search_ssh(&live, &session, params));
-        }
-        let file = params.get("file").and_then(Value::as_str).ok_or_else(|| PluginError::new(-32602, "Missing file"))?;
+        let file = LogFile::resolve(self, &session, params)?;
         let keyword = params.get("keyword").and_then(Value::as_str).unwrap_or("").trim().to_string();
         let level = params.get("level").and_then(Value::as_str).unwrap_or("ALL").to_ascii_uppercase();
         let start = params.get("startTime").and_then(Value::as_str).unwrap_or("").to_string();
@@ -30,8 +21,6 @@ impl crate::Plugin {
         let use_regex = params.get("regex").and_then(Value::as_bool).unwrap_or(false);
         let context = params.get("context").and_then(Value::as_u64).unwrap_or(0).min(20) as usize;
 
-        // 路径约束：首段根短名 + canonicalize 校验在所属根内
-        let path = safe_join(&session, file)?;
         let start_num = if start.trim().is_empty() { None } else { parse_time_num(&start) };
         let end_num = if end.trim().is_empty() { None } else { parse_time_num(&end) };
         // 正则预编译：非法直接报错（前端透出提示），空关键字按全匹配处理
@@ -42,23 +31,20 @@ impl crate::Plugin {
             None
         };
 
-        let f = File::open(&path).map_err(|e| PluginError::new(-32000, format!("无法打开文件 {file}：{e}")))?;
+        let mut reader = file.open()?;
         let mut hits: Vec<(usize, String)> = Vec::new();
         let mut truncated = false;
-        for (idx, line) in BufReader::new(f).lines().enumerate() {
-            let text = match line {
-                Ok(t) => t,
-                Err(_) => continue, // 坏行跳过：日志常有截断写，不整体失败
-            };
+        while let Some((no, text)) = reader.next_line()? {
             if !match_line(&text, &keyword, &level, start_num, end_num, compiled.as_ref()) {
                 continue;
             }
-            hits.push((idx + 1, text)); // 行号 1-based，排序后仍指向原文位置
+            hits.push((no, text)); // 行号 1-based，排序后仍指向原文位置
             if hits.len() >= crate::MAX_RETURN_LINES {
                 truncated = true;
                 break;
             }
         }
+        drop(reader);
         // total 按命中计数；分页先切命中，页内再展开上下文（lines 可能超 pageSize，属预期）
         let total = hits.len();
         if newest_first {
@@ -69,7 +55,7 @@ impl crate::Plugin {
         let lines: Vec<Value> = if context == 0 || page_hits.is_empty() {
             page_hits.into_iter().map(|(no, text)| json!({ "no": no, "text": text, "match": true })).collect()
         } else {
-            expand_context(&path, &page_hits, context, newest_first)
+            expand_context(&file, &page_hits, context, newest_first)?
         };
         Ok(json!({ "total": total, "page": page, "pageSize": page_size, "truncated": truncated, "lines": lines }))
     }
@@ -110,7 +96,7 @@ pub(crate) fn match_line(text: &str, keyword: &str, level: &str, start: Option<u
 
 // 上下文展开：页内命中行前后各取 context 行，第二遍扫文件按窗口取行
 // 输出按行号升序（newest_first 则整体反转）；match 标记命中/上下文；坏行跳过致窗口缺行属预期
-fn expand_context(path: &str, page_hits: &[(usize, String)], context: usize, newest_first: bool) -> Vec<Value> {
+fn expand_context(file: &LogFile<'_>, page_hits: &[(usize, String)], context: usize, newest_first: bool) -> Result<Vec<Value>, PluginError> {
     let hit_nos: HashSet<usize> = page_hits.iter().map(|(no, _)| *no).collect();
     let mut win: HashSet<usize> = HashSet::new();
     for (no, _) in page_hits {
@@ -120,23 +106,19 @@ fn expand_context(path: &str, page_hits: &[(usize, String)], context: usize, new
         }
     }
     let mut out: Vec<(usize, String, bool)> = Vec::new();
-    if let Ok(f) = File::open(path) {
-        for (idx, line) in BufReader::new(f).lines().enumerate() {
-            let no = idx + 1;
-            if win.remove(&no) {
-                if let Ok(text) = line {
-                    out.push((no, text, hit_nos.contains(&no)));
-                }
-                if win.is_empty() {
-                    break; // 窗口取齐提前收工
-                }
+    let mut reader = file.open()?;
+    while let Some((no, text)) = reader.next_line()? {
+        if win.remove(&no) {
+            out.push((no, text, hit_nos.contains(&no)));
+            if win.is_empty() {
+                break;
             }
         }
     }
     if newest_first {
         out.reverse();
     }
-    out.into_iter().map(|(no, text, m)| json!({ "no": no, "text": text, "match": m })).collect()
+    Ok(out.into_iter().map(|(no, text, m)| json!({ "no": no, "text": text, "match": m })).collect())
 }
 
 // 秒后时区后缀解析：Z=UTC(偏移0)；±hh[:mm]/±hhmm 为秒级偏移；无后缀/格式不对返回 None（按本地直读）
@@ -387,82 +369,3 @@ mod tests {
         std::fs::remove_dir_all(&base).ok(); // 测试收尾清理临时目录
     }
 }
-
-// logs/search 远端版：SFTP 两遍扫（命中收集→分页→窗口重扫），过滤/分页语义与本地一致
-async fn search_ssh(live: &SshLive, session: &Session, params: &Value) -> Result<Value, PluginError> {
-    use tokio::io::{AsyncBufReadExt, BufReader};
-    let file = params.get("file").and_then(Value::as_str).ok_or_else(|| PluginError::new(-32602, "Missing file"))?;
-    let keyword = params.get("keyword").and_then(Value::as_str).unwrap_or("").trim().to_string();
-    let level = params.get("level").and_then(Value::as_str).unwrap_or("ALL").to_ascii_uppercase();
-    let start = params.get("startTime").and_then(Value::as_str).unwrap_or("").to_string();
-    let end = params.get("endTime").and_then(Value::as_str).unwrap_or("").to_string();
-    let page = params.get("page").and_then(Value::as_u64).unwrap_or(1).max(1) as usize;
-    let page_size = (params.get("pageSize").and_then(Value::as_u64).unwrap_or(100) as usize).clamp(1, crate::MAX_PAGE_SIZE);
-    let newest_first = params.get("sort").and_then(Value::as_str).unwrap_or("desc") != "asc";
-    let use_regex = params.get("regex").and_then(Value::as_bool).unwrap_or(false);
-    let context = params.get("context").and_then(Value::as_u64).unwrap_or(0).min(20) as usize;
-    let path = remote_resolve(live, session, file).await?;
-    let start_num = if start.trim().is_empty() { None } else { parse_time_num(&start) };
-    let end_num = if end.trim().is_empty() { None } else { parse_time_num(&end) };
-    let compiled = if use_regex && !keyword.is_empty() {
-        Some(SimpleRegex::compile(&keyword)
-            .map_err(|e| PluginError::new(-32602, format!("正则表达式无效：{e}")))?)
-    } else {
-        None
-    };
-    let e = |m: String| PluginError::new(-32000, m);
-    // 第一遍：收集命中（行号+文本，上限截断同本地）
-    let f = live.sftp.open(&path).await.map_err(|er| e(format!("无法打开文件 {file}：{er:?}")))?;
-    let mut hits: Vec<(usize, String)> = Vec::new();
-    let mut truncated = false;
-    let mut lines = BufReader::new(f).lines();
-    let mut no = 0;
-    while let Some(text) = lines.next_line().await.map_err(|er| e(format!("读取文件失败 {file}：{er:?}")))? {
-        no += 1;
-        if !match_line(&text, &keyword, &level, start_num, end_num, compiled.as_ref()) {
-            continue;
-        }
-        hits.push((no, text));
-        if hits.len() >= crate::MAX_RETURN_LINES {
-            truncated = true;
-            break;
-        }
-    }
-    let total = hits.len();
-    if newest_first {
-        hits.reverse();
-    }
-    let start_idx = (page - 1) * page_size;
-    let page_hits: Vec<(usize, String)> = hits.into_iter().skip(start_idx).take(page_size).collect();
-    // 第二遍：无上下文直接返回；有则窗口重扫（坏行跳过致缺行属预期）
-    let lines_out: Vec<Value> = if context == 0 || page_hits.is_empty() {
-        page_hits.into_iter().map(|(no, text)| json!({ "no": no, "text": text, "match": true })).collect()
-    } else {
-        let hit_nos: HashSet<usize> = page_hits.iter().map(|(n, _)| *n).collect();
-        let mut win: HashSet<usize> = HashSet::new();
-        for (n, _) in &page_hits {
-            for w in n.saturating_sub(context).max(1)..=n.saturating_add(context) {
-                win.insert(w);
-            }
-        }
-        let f2 = live.sftp.open(&path).await.map_err(|er| e(format!("无法打开文件 {file}：{er:?}")))?;
-        let mut out: Vec<(usize, String, bool)> = Vec::new();
-        let mut lines2 = BufReader::new(f2).lines();
-        let mut no2 = 0;
-        while let Some(text) = lines2.next_line().await.map_err(|er| e(format!("读取文件失败 {file}：{er:?}")))? {
-            no2 += 1;
-            if win.remove(&no2) {
-                out.push((no2, text, hit_nos.contains(&no2)));
-                if win.is_empty() {
-                    break;
-                }
-            }
-        }
-        if newest_first {
-            out.reverse();
-        }
-        out.into_iter().map(|(n, t, m)| json!({ "no": n, "text": t, "match": m })).collect()
-    };
-    Ok(json!({ "total": total, "page": page, "pageSize": page_size, "truncated": truncated, "lines": lines_out }))
-}
-

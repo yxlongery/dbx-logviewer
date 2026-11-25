@@ -1,4 +1,4 @@
-use crate::path::safe_join;
+use crate::path::{is_gzip_log_name, safe_join};
 use crate::regex::SimpleRegex;
 use crate::session::SshLive;
 use crate::ssh::remote_resolve;
@@ -21,11 +21,14 @@ impl crate::Plugin {
     // logs/tail：起后台线程轮询增量，新行经 emitter 事件推送；返回 streamId 供停止
     pub(crate) fn tail(&self, params: &Value, emitter: &PluginEmitter) -> Result<Value, PluginError> {
         let session = self.session(params)?;
+        let file = params.get("file").and_then(Value::as_str).ok_or_else(|| PluginError::new(-32602, "Missing file"))?;
+        if is_gzip_log_name(file.trim()) {
+            return Err(PluginError::new(-32602, "gzip 归档不支持实时监控，请使用搜索查看"));
+        }
         // SSH 模式走复用长连接
         if session.ssh.is_some() {
             return self.tail_ssh(params, emitter);
         }
-        let file = params.get("file").and_then(Value::as_str).ok_or_else(|| PluginError::new(-32602, "Missing file"))?;
         let path = safe_join(&session, file)?;
         let keyword = params.get("keyword").and_then(Value::as_str).unwrap_or("").trim().to_string();
         let level = params.get("level").and_then(Value::as_str).unwrap_or("ALL").to_ascii_uppercase();
@@ -67,7 +70,7 @@ impl crate::Plugin {
     }
 
     // logs/tail SSH 版：复用 SFTP 长连接读增量，轮询 2s（建连开销大，不用 500ms）
-    pub(crate) fn tail_ssh(&self, params: &Value, emitter: &PluginEmitter) -> Result<Value, PluginError> {
+    fn tail_ssh(&self, params: &Value, emitter: &PluginEmitter) -> Result<Value, PluginError> {
         let session = self.session(params)?;
         let live = ssh_live_of(self, params, &session)?;
         let file = params.get("file").and_then(Value::as_str).ok_or_else(|| PluginError::new(-32602, "Missing file"))?;

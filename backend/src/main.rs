@@ -13,6 +13,7 @@ mod path;
 mod regex;
 mod lifecycle;
 mod browse;
+mod log_file;
 mod search;
 mod tail;
 mod download;
@@ -37,7 +38,7 @@ impl Default for Plugin {
     }
 }
 
-// 允许的日志扩展名：只展示 *.log 与 nohup.out
+// 普通日志扩展名，gzip 归档另外按文件名判断。
 pub(crate) const ALLOWED_EXTS: [&str; 2] = ["log", "out"];
 // 单次 search 最多返回行数：防 8MB JSON 上限，也防大文件全量进内存
 pub(crate) const MAX_RETURN_LINES: usize = 20000;

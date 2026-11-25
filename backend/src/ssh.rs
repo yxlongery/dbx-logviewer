@@ -1,6 +1,6 @@
 use crate::path::{is_log_name, remote_join_ok, root_name};
 use crate::session::{Session, SshAccept, SshAuth, SshConf, SshLive, normalize_fp};
-use crate::{ALLOWED_EXTS, Plugin};
+use crate::Plugin;
 use dbx_plugin_sdk::PluginError;
 use serde_json::Value;
 
@@ -91,7 +91,7 @@ pub(crate) async fn remote_resolve(live: &SshLive, session: &Session, rel: &str)
     Ok(canon)
 }
 
-// 远端日志计数：根下 .log/.out 文件数（test/connect 提前校验用）
+// 远端日志计数：与目录浏览共用文件名规则。
 pub(crate) async fn count_remote_logs(live: &SshLive, dir: &str) -> Result<usize, PluginError> {
     let canon = live.sftp.canonicalize(dir).await
         .map_err(|e| PluginError::new(-32000, format!("无法读取目录 {dir}：{e:?}")))?;
@@ -123,8 +123,6 @@ pub(crate) fn ssh_live_of(plugin: &Plugin, params: &Value, session: &Session) ->
         .cloned()
         .ok_or_else(|| PluginError::new(-32000, "连接未建立：请先连接后再操作"))
 }
-
-// 目录下 .log/.out 文件计数，用于 test/connect 提前校验
 
 pub(crate) async fn remote_len(live: &SshLive, path: &str) -> Result<u64, PluginError> {
     live.sftp.metadata(path).await

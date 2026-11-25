@@ -2,6 +2,7 @@
 /staging/
 /tmp/
 /.dbx-dev/
+/.idea/
 /backend/target/
 .dbx-repository-signing-key.env
 .DS_Store

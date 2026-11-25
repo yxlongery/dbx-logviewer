@@ -10,7 +10,7 @@
 
 ## ✨ 功能特性
 
-- 📁 **目录浏览**：面包屑下钻子目录，文件名过滤 + 排序（时间/名称/大小），点文件即查；只读展示 `.log` / `.out`（`logs/browse`）
+- 📁 **目录浏览**：面包屑下钻子目录，文件名过滤 + 排序（时间/名称/大小），点文件即查。支持 `.log`、`.out`、`.log.gz` 和 `.log.N.gz`（`logs/browse`）。
 - 🌐 **SSH 远端**：填 SSH 主机/用户后直读远程日志，操作与本地一致；密码 + 密钥（含口令）认证，Secret 走宿主 Secret Store；主机指纹严格校验（首次留空取指纹，确认后填入）；SFTP 会话复用，实时轮询 2s
 - 📦 **折叠卡片**：文件卡片与搜索条件默认收起，标题前 ▸/▾ 指示 + 摘要行，日志区占满剩余视口
 - 🙈 **隐藏**：仅在界面隐藏、文件保留，按连接记住名单，可一键恢复；无真删操作
@@ -73,7 +73,7 @@
 
 ## ⚙️ 限制
 
-- 只列出 `.log` / `.out` 文件（隐藏文件/目录不展示）
+- 本地和 SSH 模式均可搜索和下载 gzip 日志。插件边读边解压，保留源归档，下载内容为文本。实时监控适用于普通日志。
 - 单页 ≤ 500 行（默认 100）；单次搜索最多返回 20000 行，超出截断并提示
 - 实时监控初始 200 行；下载分块 2000 行/轮
 - 隐藏只影响界面展示，不删除任何文件
@@ -89,5 +89,5 @@
 **Log Viewer** is a DBX plugin for browsing server `.log` files: directory drill-down (breadcrumb + filter + sort), paged search (keyword + level + time range with quick ranges + sort), live tailing via `logs/append` events, chunked download, plus UI-only hide (never deletes files). Since `0.2.0`: SSH remote mode (password/key with passphrase, strict host-key check, reusable SFTP session) and collapsible cards with a viewport-height log area. UI extras: 8 themes (DBX-native by default), `Ctrl+K` command palette, live flow glow, per-level distribution bar, skeleton loading and keyboard shortcuts (`/`, `t`, `←/→`).
 
 - Install from the DBX store (or a `.dbxp` in [Releases](https://github.com/yxlongery/dbx-logviewer/releases)), create a connection with comma-separated log roots (e.g. `/app/data,/logs`; mount scattered logs as independent top-level volumes like `/logs/autofeedemby:ro`, never nested under `/app/data`), then open the workbench from that connection.
-- Limits: lists `.log` / `.out` only; ≤ 500 rows/page (default 100); at most 20000 matched rows per search (truncated with notice); tail starts from the last 200 lines.
+- Reads `.log` and `.out` files, plus `.log.gz` and `.log.N.gz` archives over local and SSH connections. Gzip archives support search and text download. Live tail starts from the last 200 lines of an uncompressed log. Search returns up to 500 rows per page (default 100) and collects at most 20000 matches.
 - License: [Apache-2.0](LICENSE).
